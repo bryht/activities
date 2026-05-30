@@ -48,24 +48,24 @@ export default function ActivitiesCalendar({ activities }) {
         <div className="mb-3 flex items-center justify-between">
           <button
             onClick={() => shiftMonth(-1)}
-            className="rounded-full px-3 py-1.5 text-sm font-medium text-slate-600 ring-1 ring-slate-200 transition hover:ring-brand-200"
+            className="rounded-full px-3 py-1.5 text-sm font-medium text-slate-600 ring-1 ring-slate-200 transition hover:ring-brand-200 dark:text-slate-300 dark:ring-slate-700 dark:hover:ring-brand-400"
           >
             ← Prev
           </button>
-          <h2 className="text-lg font-bold text-slate-900">
+          <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
             {cursor.toLocaleDateString('en-US', MONTH_FMT)}
           </h2>
           <button
             onClick={() => shiftMonth(1)}
-            className="rounded-full px-3 py-1.5 text-sm font-medium text-slate-600 ring-1 ring-slate-200 transition hover:ring-brand-200"
+            className="rounded-full px-3 py-1.5 text-sm font-medium text-slate-600 ring-1 ring-slate-200 transition hover:ring-brand-200 dark:text-slate-300 dark:ring-slate-700 dark:hover:ring-brand-400"
           >
             Next →
           </button>
         </div>
 
-        <div className="grid grid-cols-7 gap-px overflow-hidden rounded-2xl bg-slate-200 ring-1 ring-slate-200">
+        <div className="grid grid-cols-7 gap-px overflow-hidden rounded-2xl bg-slate-200 ring-1 ring-slate-200 dark:bg-slate-700 dark:ring-slate-700">
           {WEEKDAYS.map((w) => (
-            <div key={w} className="bg-rose-50 py-2 text-center text-xs font-semibold text-slate-500">
+            <div key={w} className="bg-rose-50 py-2 text-center text-xs font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
               {w}
             </div>
           ))}
@@ -79,18 +79,22 @@ export default function ActivitiesCalendar({ activities }) {
                 key={day.toISOString()}
                 onClick={() => setSelected(day)}
                 className={`flex min-h-[84px] flex-col items-start gap-1 p-2 text-left transition ${
-                  inMonth ? 'bg-white' : 'bg-slate-50'
-                } ${isSelected ? 'ring-2 ring-inset ring-brand-400' : 'hover:bg-brand-50/50'}`}
+                  inMonth ? 'bg-white dark:bg-slate-800' : 'bg-slate-50 dark:bg-slate-900'
+                } ${isSelected ? 'ring-2 ring-inset ring-brand-400' : 'hover:bg-brand-50/50 dark:hover:bg-brand-500/10'}`}
               >
                 <span
                   className={`grid h-6 w-6 place-items-center rounded-full text-sm ${
-                    isToday ? 'bg-brand-500 font-bold text-white' : inMonth ? 'text-slate-700' : 'text-slate-300'
+                    isToday
+                      ? 'bg-brand-500 font-bold text-white'
+                      : inMonth
+                        ? 'text-slate-700 dark:text-slate-200'
+                        : 'text-slate-300 dark:text-slate-600'
                   }`}
                 >
                   {day.getDate()}
                 </span>
                 {list.length > 0 && (
-                  <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-semibold text-brand-700">
+                  <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-semibold text-brand-700 dark:bg-brand-500/20 dark:text-brand-200">
                     {list.length} {list.length === 1 ? 'activity' : 'activities'}
                   </span>
                 )}
@@ -101,11 +105,11 @@ export default function ActivitiesCalendar({ activities }) {
 
         {/* Selected day's activities */}
         <div className="mt-4">
-          <h3 className="mb-2 text-sm font-semibold text-slate-600">
+          <h3 className="mb-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
             {selected.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </h3>
           {selectedList.length === 0 ? (
-            <p className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400 ring-1 ring-slate-100">
+            <p className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400 ring-1 ring-slate-100 dark:bg-slate-800 dark:text-slate-500 dark:ring-slate-700">
               No activities on this day.
             </p>
           ) : (
@@ -124,9 +128,9 @@ export default function ActivitiesCalendar({ activities }) {
           .sort(([a], [b]) => (a < b ? -1 : 1))
           .map(([key, list]) => (
             <div key={key}>
-              <h3 className="mb-2 flex items-baseline gap-2 text-sm font-semibold text-slate-700">
+              <h3 className="mb-2 flex items-baseline gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
                 {dayLabel(list[0].when)}
-                <span className="text-xs font-normal text-slate-400">
+                <span className="text-xs font-normal text-slate-400 dark:text-slate-500">
                   {new Date(list[0].when).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                 </span>
               </h3>
@@ -138,7 +142,7 @@ export default function ActivitiesCalendar({ activities }) {
             </div>
           ))}
         {byDay.size === 0 && (
-          <p className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400 ring-1 ring-slate-100">
+          <p className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400 ring-1 ring-slate-100 dark:bg-slate-800 dark:text-slate-500 dark:ring-slate-700">
             No activities match these filters yet.
           </p>
         )}
