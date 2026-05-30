@@ -1,0 +1,17 @@
+[Unit]
+Description=KidGo API (Rust/Axum)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/kidgo
+EnvironmentFile=/opt/kidgo/.env
+ExecStart=/opt/kidgo/kidgo-api
+Restart=on-failure
+RestartSec=3
+# Modest limits — the box only has ~512MB RAM.
+MemoryMax=200M
+
+[Install]
+WantedBy=multi-user.target

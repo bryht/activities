@@ -1,0 +1,15 @@
+{
+  "name": "kidgo-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "KidGo WhatsApp bot (Baileys) — main entry point (PRD §5.1).",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.9",
+    "pino": "^9.5.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}

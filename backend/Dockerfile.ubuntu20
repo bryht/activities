@@ -1,0 +1,15 @@
+# Builds a glibc binary against Ubuntu 20.04 (glibc 2.31) so it runs natively
+# on the deploy server without a libc mismatch. Output: /app/target/release/kidgo-api
+FROM ubuntu:20.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl ca-certificates build-essential pkg-config cmake clang \
+    && rm -rf /var/lib/apt/lists/*
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --default-toolchain 1.88.0 --profile minimal
+ENV PATH=/root/.cargo/bin:$PATH
+WORKDIR /app
+COPY Cargo.toml Cargo.lock* ./
+COPY src ./src
+COPY migrations ./migrations
+RUN cargo build --release

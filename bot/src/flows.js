@@ -1,0 +1,255 @@
+// Conversation flows for the KidGo bot (PRD §4.1–4.4).
+// Hybrid model: numbered quick-replies for menus + natural language for posting.
+import { api } from './api.js'
+
+// Per-user conversation state, keyed by phone. In-memory is fine for the pilot;
+// move to Redis/DB when we run multiple bot instances.
+const sessions = new Map()
+const session = (phone) => {
+  if (!sessions.has(phone)) sessions.set(phone, { step: 'idle', data: {} })
+  return sessions.get(phone)
+}
+
+let groupsCache = null
+const groups = async () => (groupsCache ||= await api.groups())
+
+const MENU = [
+  '🏡 *KidGo menu* — reply with a number:',
+  '1️⃣ Post an activity',
+  '2️⃣ Browse activities',
+  '3️⃣ My activities',
+  '4️⃣ My profile',
+  '',
+  'Or just type what you want to do, e.g. “Saturday 2pm sandbox at Stadspark”.',
+].join('\n')
+
+function fmtTime(iso) {
+  const d = new Date(iso)
+  return d.toLocaleString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Europe/Amsterdam',
+  })
+}
+
+function fmtActivity(a, i) {
+  const n = i != null ? `${i + 1}. ` : ''
+  return `${n}*${a.title}*\n   🗓️ ${fmtTime(a.when)} · 📍 ${a.spot.name} (${a.area})\n   👨‍👩‍👧 ${a.going.length}/${a.capacity} going`
+}
+
+/**
+ * Handle one inbound text message.
+ * @param {string} phone  digits-only WhatsApp id
+ * @param {string} text   message body
+ * @param {(t:string)=>Promise<void>} reply
+ */
+export async function handleMessage(phone, text, reply) {
+  const s = session(phone)
+  const msg = text.trim()
+  const lower = msg.toLowerCase()
+
+  // Global escape hatches.
+  if (['menu', 'hi', 'hello', 'help', 'start'].includes(lower)) {
+    s.step = 'idle'
+  }
+  if (lower === 'cancel') {
+    s.step = 'idle'
+    s.data = {}
+    await reply('Okay, cancelled. ' + MENU)
+    return
+  }
+
+  const user = await api.userByPhone(phone)
+
+  // ---- Registration (PRD §4.1) ----
+  if (!user) {
+    return register(s, phone, msg, reply)
+  }
+
+  switch (s.step) {
+    case 'post_sentence':
+      return postFromSentence(s, user, msg, reply)
+    case 'post_pick_spot':
+      return postPickSpot(s, user, msg, reply)
+    case 'post_confirm':
+      return postConfirm(s, user, lower, reply)
+    case 'browse_pick':
+      return browsePick(s, user, msg, reply)
+    default:
+      return mainMenu(s, user, msg, lower, reply)
+  }
+}
+
+// ---- registration ----
+
+async function register(s, phone, msg, reply) {
+  if (s.step !== 'reg_nickname' && s.step !== 'reg_stage') {
+    s.step = 'reg_nickname'
+    s.data = {}
+    await reply("👋 Welcome to *KidGo*! Let's get you set up.\n\nHow should we call you?")
+    return
+  }
+  if (s.step === 'reg_nickname') {
+    s.data.nickname = msg
+    s.step = 'reg_stage'
+    const gs = await groups()
+    const list = gs.map((g, i) => `${i + 1}. ${g.emoji} ${g.name} (${g.range})`).join('\n')
+    await reply(`Nice to meet you, ${msg}! 🎉\n\nWhich stage is your child in?\n${list}`)
+    return
+  }
+  // reg_stage
+  const gs = await groups()
+  const pick = parsePick(msg, gs)
+  if (!pick) {
+    await reply('Please reply with the number of your child’s stage (e.g. 3).')
+    return
+  }
+  const user = await api.upsertUser({
+    nickname: s.data.nickname,
+    phone,
+    childStage: pick.id,
+    interests: [pick.id],
+  })
+  s.step = 'idle'
+  s.data = {}
+  await reply(`All set, ${user.nickname}! 🍼 Your stage: ${pick.emoji} ${pick.name}.\n\n${MENU}`)
+}
+
+// ---- main menu ----
+
+async function mainMenu(s, user, msg, lower, reply) {
+  if (lower === '1' || lower.startsWith('post')) {
+    s.step = 'post_sentence'
+    await reply('✍️ Describe your activity in one sentence:\n“Saturday 2pm, sandbox at Stadspark”')
+    return
+  }
+  if (lower === '2' || lower.startsWith('browse')) {
+    return browse(s, reply)
+  }
+  if (lower === '3' || lower.startsWith('mine') || lower.startsWith('my')) {
+    const mine = await api.myActivities(user.id)
+    if (!mine.length) return reply('You have no activities yet. Reply 1 to post one!')
+    return reply('📋 *Your activities*\n\n' + mine.map((a, i) => fmtActivity(a, i)).join('\n\n'))
+  }
+  if (lower === '4' || lower.startsWith('profile')) {
+    const gs = await groups()
+    const g = gs.find((x) => x.id === user.childStage)
+    return reply(
+      `👤 *${user.nickname}*\n📍 ${user.city}\n🧒 Stage: ${g ? g.emoji + ' ' + g.name : '—'}\n\n${MENU}`,
+    )
+  }
+  // Fall back to treating free text as an activity sentence.
+  if (msg.length > 6) {
+    return postFromSentence(s, user, msg, reply)
+  }
+  await reply(MENU)
+}
+
+// ---- posting (Scenario A) ----
+
+async function postFromSentence(s, user, msg, reply) {
+  const parsed = await api.parse(msg)
+  s.data.draft = {
+    when: parsed.when,
+    spotId: parsed.spotId,
+    tags: parsed.tags || [],
+    title: parsed.title || undefined,
+  }
+  if (!parsed.when) {
+    s.step = 'post_sentence'
+    await reply('I couldn’t catch the day/time. Try e.g. “Saturday 2pm …” or type *cancel*.')
+    return
+  }
+  if (!parsed.spotId) {
+    return postPickSpotPrompt(s, reply)
+  }
+  return showConfirm(s, reply)
+}
+
+async function postPickSpotPrompt(s, reply) {
+  s.step = 'post_pick_spot'
+  const spots = await api.spots()
+  s.data.spots = spots
+  const list = spots.map((sp, i) => `${i + 1}. ${sp.name} (${sp.area})`).join('\n')
+  await reply(`Which spot?\n${list}`)
+}
+
+async function postPickSpot(s, user, msg, reply) {
+  const spots = s.data.spots || (await api.spots())
+  const idx = parseInt(msg, 10) - 1
+  const spot = spots[idx]
+  if (!spot) return reply('Please reply with a spot number from the list.')
+  s.data.draft.spotId = spot.id
+  return showConfirm(s, reply)
+}
+
+async function showConfirm(s, reply) {
+  const d = s.data.draft
+  const spots = await api.spots()
+  const spot = spots.find((x) => x.id === d.spotId)
+  s.step = 'post_confirm'
+  await reply(
+    `Please confirm:\n\n📅 ${fmtTime(d.when)}\n📍 ${spot ? spot.name : d.spotId}\n🏷️ ${
+      d.tags.length ? d.tags.join(', ') : '—'
+    }\n\nReply *yes* to post, or *no* to discard.`,
+  )
+}
+
+async function postConfirm(s, user, lower, reply) {
+  if (lower !== 'yes' && lower !== 'y') {
+    s.step = 'idle'
+    s.data = {}
+    await reply('Discarded. ' + MENU)
+    return
+  }
+  const d = s.data.draft
+  const a = await api.createActivity({
+    hostId: user.id,
+    spotId: d.spotId,
+    when: d.when,
+    tags: d.tags,
+    title: d.title,
+  })
+  s.step = 'idle'
+  s.data = {}
+  await reply(`✅ Activity created!\n\n${fmtActivity(a)}\n\nI’ll let you know when someone joins!`)
+}
+
+// ---- browsing & joining (Scenario B/D) ----
+
+async function browse(s, reply) {
+  const list = await api.listActivities()
+  if (!list.length) return reply('No upcoming activities yet. Reply 1 to post the first one!')
+  s.data.browse = list
+  s.step = 'browse_pick'
+  await reply(
+    '🔍 *Upcoming activities*\n\n' +
+      list.map((a, i) => fmtActivity(a, i)).join('\n\n') +
+      '\n\nReply with a number to join.',
+  )
+}
+
+async function browsePick(s, user, msg, reply) {
+  const list = s.data.browse || []
+  const idx = parseInt(msg, 10) - 1
+  const a = list[idx]
+  if (!a) {
+    s.step = 'idle'
+    return reply('Hmm, that wasn’t on the list. ' + MENU)
+  }
+  await api.join(a.id, user.id)
+  s.step = 'idle'
+  await reply(`🎉 You’re going to *${a.title}*!\n${fmtTime(a.when)} · ${a.spot.name}\n\nSee you there!`)
+}
+
+// ---- helpers ----
+
+function parsePick(msg, list) {
+  const n = parseInt(msg, 10)
+  if (n >= 1 && n <= list.length) return list[n - 1]
+  const lower = msg.toLowerCase()
+  return list.find((g) => g.name.toLowerCase() === lower || g.id === lower) || null
+}

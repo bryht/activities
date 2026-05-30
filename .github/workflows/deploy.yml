@@ -18,24 +18,28 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # The website prototype lives in design/
+    # The production website lives in frontend/ (the design/ prototype is retired).
     defaults:
       run:
-        working-directory: design
+        working-directory: frontend
+    env:
+      # The site talks to the KidGo API behind the api.bryht.net reverse proxy.
+      VITE_API_BASE: https://api.bryht.net/kid-go
+      VITE_BOT_NUMBER: ${{ vars.KIDGO_BOT_NUMBER || '31600000000' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: design/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run build
       # SPA fallback: serve index.html for unknown deep-link paths
       - run: cp dist/index.html dist/404.html
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: design/dist
+          path: frontend/dist
 
   deploy:
     needs: build
