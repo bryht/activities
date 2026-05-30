@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Executor;
+use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
@@ -82,7 +83,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => routes,
     }
     .layer(cors)
-    .layer(TraceLayer::new_for_http());
+    .layer(TraceLayer::new_for_http())
+    // Outermost: turn any handler panic into a 500 instead of dropping the
+    // connection, so one malformed message can't break a request silently.
+    .layer(CatchPanicLayer::new());
 
     let addr = format!("0.0.0.0:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
