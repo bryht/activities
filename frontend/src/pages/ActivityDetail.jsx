@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { useApi, apiSend, activitiesQuery } from '../lib/api'
+import { useApi, apiSend } from '../lib/api'
 import { getExpiredToken } from '../lib/session'
 import { dayLabel, timeLabel } from '../lib/datetime'
 import { mapsUrl, calendarUrl } from '../lib/links'
 import GroupBadge from '../components/GroupBadge'
 import WhatsAppButton from '../components/WhatsAppButton'
-import ActivityCard from '../components/ActivityCard'
 
 export default function ActivityDetail() {
   const { id } = useParams()
@@ -16,7 +15,6 @@ export default function ActivityDetail() {
   const expiredToken = getExpiredToken()
 
   const { data: fetched, loading, error } = useApi(`/api/activities/${id}`)
-  const { data: all } = useApi(activitiesQuery({}))
 
   // Keep a local copy so edits / new messages / cancel reflect without a refetch.
   const [activity, setActivity] = useState(null)
@@ -45,11 +43,6 @@ export default function ActivityDetail() {
   const isOwner = role === 'owner'
   const joined = role === 'owner' || role === 'participant'
   const cancelled = activity.status === 'cancelled'
-
-  // Smart match (PRD §4.5): same area or stage, excluding this one.
-  const suggestions = (all || [])
-    .filter((a) => a.id !== activity.id && (a.area === activity.area || a.group === activity.group))
-    .slice(0, 2)
 
   // The [ref:<id>] token lets the bot match the exact activity (PRD §3.B).
   const joinMessage = `Hi KidGo! I'd like to join "${activity.title}" at ${spot?.name} (${dayLabel(activity.when)} ${timeLabel(activity.when)}). [ref:${activity.id}]`
@@ -211,7 +204,7 @@ export default function ActivityDetail() {
           </section>
         </div>
 
-        {/* Sidebar (tablet/desktop) — CTA + smart match */}
+        {/* Sidebar (tablet/desktop) — CTA */}
         <aside className="mt-4 lg:col-span-1 lg:mt-0">
           <div className="space-y-4 lg:sticky lg:top-[73px]">
             {/* Desktop CTA card */}
@@ -221,20 +214,6 @@ export default function ActivityDetail() {
               </p>
               {joined ? <JoinedNote role={role} /> : <WhatsAppButton label="I want to come 🙋" message={joinMessage} />}
             </div>
-
-            {/* Smart match */}
-            {suggestions.length > 0 && (
-              <section>
-                <h2 className="mb-2 flex items-center gap-1 text-sm font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                  ⚡ You might also like
-                </h2>
-                <div className="space-y-3">
-                  {suggestions.map((a) => (
-                    <ActivityCard key={a.id} activity={a} />
-                  ))}
-                </div>
-              </section>
-            )}
           </div>
         </aside>
       </div>
