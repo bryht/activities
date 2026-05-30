@@ -1,13 +1,14 @@
-import { QRCodeSVG } from 'qrcode.react'
-import { useReference } from '../context/Reference'
-import WhatsAppButton from '../components/WhatsAppButton'
-import KidGoMark from '../components/KidGoMark'
+import { QRCodeSVG } from "qrcode.react";
+import { useReference } from "../context/Reference";
+import WhatsAppButton from "../components/WhatsAppButton";
+import KidGoMark from "../components/KidGoMark";
 
 // WhatsApp contact QR — scanning it in the WhatsApp app adds the bot (PRD §4.1, §8).
-const BOT_QR_URL = import.meta.env.VITE_BOT_QR_URL || 'https://wa.me/qr/FVDNWYDE2CR2N1'
+const BOT_QR_URL =
+  import.meta.env.VITE_BOT_QR_URL || "https://wa.me/qr/FVDNWYDE2CR2N1";
 
 export default function About() {
-  const { groups, spots } = useReference()
+  const { groups, spots } = useReference();
   return (
     <div className="px-4 py-6 sm:px-6 md:py-10">
       <section className="mx-auto max-w-2xl rounded-2xl bg-gradient-to-b from-brand-100 to-white p-6 text-center shadow-sm ring-1 ring-slate-100 dark:from-slate-800 dark:to-slate-800 dark:ring-slate-700 md:p-8">
@@ -17,10 +18,14 @@ export default function About() {
           <span className="text-brand-600 dark:text-brand-400">Go</span>
         </h1>
         <p className="mt-2 text-sm text-slate-600 dark:text-slate-300 md:text-base">
-          Help parents find playmates and activities for same-age kids in Maastricht.
+          Help parents find playmates and activities for same-age kids in
+          Maastricht.
         </p>
         <div className="mx-auto mt-5 max-w-xs">
-          <WhatsAppButton label="Add the bot on WhatsApp" message="Hi KidGo! I'd like to join." />
+          <WhatsAppButton
+            label="Add the bot on WhatsApp"
+            message="Hi KidGo! I'd like to join."
+          />
         </div>
         {/* Scan in the WhatsApp app to add the bot as a contact (PRD §4.1, §8). */}
         <a
@@ -29,24 +34,52 @@ export default function About() {
           rel="noreferrer"
           className="mx-auto mt-4 block w-fit rounded-xl border-2 border-brand-200 bg-white p-3 dark:border-slate-600"
         >
-          <QRCodeSVG value={BOT_QR_URL} size={128} level="M" className="h-32 w-32" />
+          <QRCodeSVG
+            value={BOT_QR_URL}
+            size={128}
+            level="M"
+            className="h-32 w-32"
+          />
         </a>
-        <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">Scan in WhatsApp to register</p>
+        <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+          Scan to talk
+        </p>
       </section>
 
       <section className="mt-6 md:mt-10">
-        <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">How it works</h2>
+        <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+          How it works
+        </h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {[
-            { icon: '✍️', title: 'Post in one sentence', body: '“Saturday 2pm, sandbox at Stadspark” — no forms.' },
-            { icon: '⚡', title: 'Smart match', body: 'We find families nearby, at a similar time, in the same stage.' },
-            { icon: '🔒', title: 'Safe by default', body: 'Contact details are shared only when both sides want to.' },
+            {
+              icon: "✍️",
+              title: "Post in one sentence",
+              body: "“Saturday 2pm, sandbox at Stadspark” — no forms.",
+            },
+            {
+              icon: "⚡",
+              title: "Smart match",
+              body: "We find families nearby, at a similar time, in the same stage.",
+            },
+            {
+              icon: "🔒",
+              title: "Safe by default",
+              body: "Contact details are shared only when both sides want to.",
+            },
           ].map((s) => (
-            <div key={s.title} className="flex gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700 sm:flex-col">
+            <div
+              key={s.title}
+              className="flex gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700 sm:flex-col"
+            >
               <span className="text-2xl">{s.icon}</span>
               <div>
-                <p className="font-bold text-slate-800 dark:text-slate-100">{s.title}</p>
-                <p className="text-sm text-slate-500 dark:text-slate-400">{s.body}</p>
+                <p className="font-bold text-slate-800 dark:text-slate-100">
+                  {s.title}
+                </p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {s.body}
+                </p>
               </div>
             </div>
           ))}
@@ -54,10 +87,15 @@ export default function About() {
       </section>
 
       <section className="mt-6 md:mt-10">
-        <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">Developmental stages</h2>
+        <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+          Developmental stages
+        </h2>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {groups.map((g) => (
-            <div key={g.id} className={`flex items-center gap-3 rounded-xl px-4 py-3 ring-1 ${g.color}`}>
+            <div
+              key={g.id}
+              className={`flex items-center gap-3 rounded-xl px-4 py-3 ring-1 ${g.color}`}
+            >
               <span className="text-xl">{g.emoji}</span>
               <span className="font-bold">{g.name}</span>
               <span className="ml-auto text-sm opacity-70">{g.range}</span>
@@ -67,21 +105,34 @@ export default function About() {
       </section>
 
       <section className="mt-6 md:mt-10">
-        <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">Popular spots</h2>
+        <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+          Popular spots
+        </h2>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {spots.map((s) => (
-            <div key={s.id} className="flex items-center justify-between rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
+            <div
+              key={s.id}
+              className="flex items-center justify-between rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700"
+            >
               <div>
-                <p className="font-semibold text-slate-800 dark:text-slate-100">{s.name}</p>
-                <p className="text-xs text-slate-400 dark:text-slate-500">{s.type}</p>
+                <p className="font-semibold text-slate-800 dark:text-slate-100">
+                  {s.name}
+                </p>
+                <p className="text-xs text-slate-400 dark:text-slate-500">
+                  {s.type}
+                </p>
               </div>
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500 dark:bg-slate-700 dark:text-slate-300">📍 {s.area}</span>
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500 dark:bg-slate-700 dark:text-slate-300">
+                📍 {s.area}
+              </span>
             </div>
           ))}
         </div>
       </section>
 
-      <p className="mt-8 text-center text-xs text-slate-400 dark:text-slate-500 md:mt-12">English · Maastricht 🇳🇱</p>
+      <p className="mt-8 text-center text-xs text-slate-400 dark:text-slate-500 md:mt-12">
+        English · Maastricht 🇳🇱
+      </p>
     </div>
-  )
+  );
 }
