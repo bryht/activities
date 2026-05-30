@@ -38,29 +38,33 @@ export default function About() {
           Help parents find playmates and activities for same-age kids in
           Maastricht.
         </p>
-        <div className="mx-auto mt-5 max-w-xs">
-          <WhatsAppButton
-            label="Add the bot on WhatsApp"
-            message="Hi KidGo! I'd like to join."
-          />
-        </div>
-        {/* Scan in the WhatsApp app to add the bot as a contact (PRD §4.1, §8). */}
-        <a
-          href={BOT_QR_URL}
-          target="_blank"
-          rel="noreferrer"
-          className="mx-auto mt-4 block w-fit rounded-xl border-2 border-brand-200 bg-white p-3 dark:border-slate-600"
-        >
-          <QRCodeSVG
-            value={BOT_QR_URL}
-            size={128}
-            level="M"
-            className="h-32 w-32"
-          />
-        </a>
-        <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
-          Scan to talk
-        </p>
+        {!loggedIn && (
+          <>
+            <div className="mx-auto mt-5 max-w-xs">
+              <WhatsAppButton
+                label="Add the bot on WhatsApp"
+                message="Hi KidGo! I'd like to join."
+              />
+            </div>
+            {/* Scan in the WhatsApp app to add the bot as a contact (PRD §4.1, §8). */}
+            <a
+              href={BOT_QR_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="mx-auto mt-4 block w-fit rounded-xl border-2 border-brand-200 bg-white p-3 dark:border-slate-600"
+            >
+              <QRCodeSVG
+                value={BOT_QR_URL}
+                size={128}
+                level="M"
+                className="h-32 w-32"
+              />
+            </a>
+            <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+              Scan to talk
+            </p>
+          </>
+        )}
       </section>
 
       <section className="mt-6 md:mt-10">
