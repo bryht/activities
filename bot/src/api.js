@@ -25,7 +25,6 @@ export const api = {
   myActivities: (userId) => req('GET', `/api/users/${userId}/activities`),
   createActivity: (a) => req('POST', '/api/activities', a),
   join: (id, userId) => req('POST', `/api/activities/${id}/join`, { userId }),
-  message: (id, userId, text) =>
-    req('POST', `/api/activities/${id}/messages`, { userId, body: text }),
+  linkToken: (userId) => req('POST', '/api/auth/link-token', { userId }),
   parse: (text) => req('POST', '/api/nlu/parse', { text }),
 }

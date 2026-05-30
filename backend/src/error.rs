@@ -11,6 +11,10 @@ pub enum AppError {
     #[error("{0}")]
     BadRequest(String),
     #[error("{0}")]
+    Unauthorized(String),
+    #[error("{0}")]
+    Forbidden(String),
+    #[error("{0}")]
     Conflict(String),
     #[error(transparent)]
     Db(#[from] sqlx::Error),
@@ -41,6 +45,8 @@ impl IntoResponse for AppError {
         let (status, msg) = match self {
             AppError::NotFound => (StatusCode::NOT_FOUND, "Not found".to_string()),
             AppError::BadRequest(m) => (StatusCode::BAD_REQUEST, m),
+            AppError::Unauthorized(m) => (StatusCode::UNAUTHORIZED, m),
+            AppError::Forbidden(m) => (StatusCode::FORBIDDEN, m),
             AppError::Conflict(m) => (StatusCode::CONFLICT, m),
             AppError::Db(e) => {
                 tracing::error!("db error: {e:?}");

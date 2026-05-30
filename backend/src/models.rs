@@ -75,7 +75,22 @@ pub struct Activity {
     pub going: Vec<String>,
     pub capacity: i32,
     pub notes: Option<String>,
+    /// "open" or "cancelled".
+    pub status: String,
     pub messages: Vec<Message>,
+    /// The requesting user's relationship to this activity, when a valid manage
+    /// token was supplied. `None` for anonymous/public views.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub viewer: Option<ViewerInfo>,
+}
+
+/// Tells the frontend what the holder of the manage link may do.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ViewerInfo {
+    pub id: Uuid,
+    /// "owner" (the host — may edit/cancel/message) or "participant" (may message).
+    pub role: String,
 }
 
 #[derive(Serialize)]
@@ -108,6 +123,7 @@ pub struct ActivityRow {
     pub recurring: bool,
     pub capacity: i32,
     pub notes: Option<String>,
+    pub status: String,
     pub host_id: Uuid,
     pub host_name: String,
     pub host_stage: Option<String>,
@@ -150,7 +166,9 @@ impl ActivityRow {
             going: self.going,
             capacity: self.capacity,
             notes: self.notes,
+            status: self.status,
             messages,
+            viewer: None,
         }
     }
 }
@@ -175,9 +193,23 @@ pub struct JoinBody {
     pub user_id: Uuid,
 }
 
+/// Owner edit. Every field is optional — only those present are changed.
+/// Changing `spot_id` also re-derives `area`, so the two never disagree.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateActivity {
+    pub title: Option<String>,
+    pub when: Option<DateTime<Utc>>,
+    pub spot_id: Option<String>,
+    pub tags: Option<Vec<String>>,
+    pub capacity: Option<i32>,
+    pub notes: Option<String>,
+    pub recurring: Option<bool>,
+}
+
+/// The author is taken from the manage token, never the request body.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PostMessage {
-    pub user_id: Uuid,
     pub body: String,
 }

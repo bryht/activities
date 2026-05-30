@@ -13,6 +13,9 @@ const session = (phone) => {
 let groupsCache = null
 const groups = async () => (groupsCache ||= await api.groups())
 
+// Public website base, for the "manage" deep links we hand owners/participants.
+const WEB_BASE = (process.env.KIDGO_WEB_BASE || 'https://kidgo.bryht.net').replace(/\/$/, '')
+
 const MENU = [
   '🏡 *KidGo menu* — reply with a number:',
   '1️⃣ Post an activity',
@@ -74,6 +77,13 @@ export async function handleMessage(phone, text, reply) {
   const ref = msg.match(/\[ref:\s*([0-9a-f-]{36})\]/i)
   if (ref) {
     return joinByRef(s, user, ref[1], reply)
+  }
+
+  // Website "get a fresh link" deep-link: an expired manage link sends the user
+  // here with a [manage:<activity-id>] token so we re-issue a working one.
+  const manage = msg.match(/\[manage:\s*([0-9a-f-]{36})\]/i)
+  if (manage) {
+    return manageByRef(s, user, manage[1], reply)
   }
 
   switch (s.step) {
@@ -139,7 +149,14 @@ async function mainMenu(s, user, msg, lower, reply) {
   if (lower === '3' || lower.startsWith('mine') || lower.startsWith('my')) {
     const mine = await api.myActivities(user.id)
     if (!mine.length) return reply('You have no activities yet. Reply 1 to post one!')
-    return reply('📋 *Your activities*\n\n' + mine.map((a, i) => fmtActivity(a, i)).join('\n\n'))
+    // Each activity gets a manage link carrying a 1-hour token. The website reads
+    // it to know whether you're the host (edit/cancel/message) or a participant
+    // (message) — no "I want to come" button, since you've already joined.
+    const { token } = await api.linkToken(user.id)
+    const body = mine
+      .map((a, i) => `${fmtActivity(a, i)}\n   🔧 Manage: ${WEB_BASE}/activities/${a.id}?token=${token}`)
+      .join('\n\n')
+    return reply(`📋 *Your activities*\n\n${body}\n\n_Manage links expire in 1 hour — just ask for this list again to refresh them._`)
   }
   if (lower === '4' || lower.startsWith('profile')) {
     const gs = await groups()
@@ -249,6 +266,30 @@ async function joinByRef(s, user, activityId, reply) {
   }
   await api.join(a.id, user.id)
   await reply(`🎉 You're going to *${a.title}*!\n${fmtTime(a.when)} · ${a.spot.name}\n\nSee you there!`)
+}
+
+async function manageByRef(s, user, activityId, reply) {
+  s.step = 'idle'
+  s.data = {}
+  const mine = await api.myActivities(user.id)
+  const a = mine.find((x) => x.id === activityId)
+  if (!a) {
+    // Not one of theirs — either gone, or they never joined it.
+    const exists = await api.activity(activityId)
+    if (!exists) {
+      await reply("Hmm, I couldn't find that activity — it may have been removed. " + MENU)
+      return
+    }
+    await reply(
+      `You haven't joined *${exists.title}* yet, so there's nothing to manage. Reply *2* to browse and join.`,
+    )
+    return
+  }
+  const { token } = await api.linkToken(user.id)
+  const role = a.host.id === user.id ? 'host' : 'going'
+  await reply(
+    `🔑 Fresh link for *${a.title}* (you're ${role}):\n${WEB_BASE}/activities/${a.id}?token=${token}\n\n_Valid for 1 hour._`,
+  )
 }
 
 async function browsePick(s, user, msg, reply) {

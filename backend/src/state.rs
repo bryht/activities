@@ -1,9 +1,13 @@
+use std::sync::Arc;
+
 use sqlx::PgPool;
 
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
     pub llm: LlmConfig,
+    /// HMAC key for signing manage-link tokens (see `auth.rs`).
+    pub link_secret: Arc<Vec<u8>>,
 }
 
 /// LLM provider for NLU. Read from env; NLU degrades to a deterministic

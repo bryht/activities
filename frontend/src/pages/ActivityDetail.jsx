@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { useApi, activitiesQuery } from '../lib/api'
+import { useApi, apiSend, activitiesQuery } from '../lib/api'
+import { getExpiredToken } from '../lib/session'
 import { dayLabel, timeLabel } from '../lib/datetime'
 import { mapsUrl, calendarUrl } from '../lib/links'
 import GroupBadge from '../components/GroupBadge'
@@ -9,10 +11,18 @@ import ActivityCard from '../components/ActivityCard'
 export default function ActivityDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { data: activity, loading, error } = useApi(`/api/activities/${id}`)
+  // The session token (from a manage link) is attached automatically by apiGet,
+  // so the response already carries our viewer role — no token in the URL.
+  const expiredToken = getExpiredToken()
+
+  const { data: fetched, loading, error } = useApi(`/api/activities/${id}`)
   const { data: all } = useApi(activitiesQuery({}))
 
-  if (loading) {
+  // Keep a local copy so edits / new messages / cancel reflect without a refetch.
+  const [activity, setActivity] = useState(null)
+  useEffect(() => setActivity(fetched), [fetched])
+
+  if (loading && !activity) {
     return <div className="p-8 text-center text-slate-400 dark:text-slate-500">Loading…</div>
   }
   if (error || !activity) {
@@ -30,6 +40,12 @@ export default function ActivityDetail() {
   const spot = activity.spot
   const messages = activity.messages || []
 
+  // viewer is set by the backend only when a valid token was supplied.
+  const role = activity.viewer?.role || null
+  const isOwner = role === 'owner'
+  const joined = role === 'owner' || role === 'participant'
+  const cancelled = activity.status === 'cancelled'
+
   // Smart match (PRD §4.5): same area or stage, excluding this one.
   const suggestions = (all || [])
     .filter((a) => a.id !== activity.id && (a.area === activity.area || a.group === activity.group))
@@ -45,6 +61,32 @@ export default function ActivityDetail() {
           ← Back
         </button>
       </div>
+
+      {cancelled && (
+        <div className="mb-4 rounded-2xl bg-amber-50 p-4 text-sm font-semibold text-amber-800 ring-1 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30">
+          ⚠️ This activity has been cancelled.
+        </div>
+      )}
+
+      {/* Expired manage link: offer a one-tap refresh via the bot instead of
+          silently dropping the parent to the public view. */}
+      {expiredToken && !joined && (
+        <div className="mb-4 rounded-2xl bg-amber-50 p-4 ring-1 ring-amber-200 dark:bg-amber-500/10 dark:ring-amber-500/30">
+          <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+            ⏰ Your manage link expired
+          </p>
+          <p className="mt-1 text-sm text-amber-700/90 dark:text-amber-200/80">
+            Tap below and the KidGo bot will send you a fresh one for this activity.
+          </p>
+          <div className="mt-3">
+            <WhatsAppButton
+              full={false}
+              label="Get a fresh link 🔑"
+              message={`Hi KidGo! My manage link for "${activity.title}" expired — can I get a fresh one? [manage:${activity.id}]`}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="lg:grid lg:grid-cols-3 lg:gap-6">
         {/* Main column */}
@@ -101,6 +143,9 @@ export default function ActivityDetail() {
             )}
           </div>
 
+          {/* Owner manage panel — edit / cancel (PRD §4.4) */}
+          {isOwner && !cancelled && <OwnerPanel activity={activity} onChange={setActivity} />}
+
           {/* Host */}
           <section>
             <div className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
@@ -132,20 +177,31 @@ export default function ActivityDetail() {
             </div>
           </section>
 
-          {/* Messages (PRD §4.4) — read-only on the website; messaging happens in WhatsApp. */}
+          {/* Messages (PRD §4.4) — owners & participants can post via their token. */}
           <section>
             <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">Messages</h2>
             <div className="space-y-2 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
               {messages.length === 0 && <p className="text-sm text-slate-400 dark:text-slate-500">No messages yet — say hi 👋</p>}
               {messages.map((m, i) => (
-                <div key={i} className="flex justify-start">
-                  <div className="max-w-[80%] rounded-2xl bg-slate-100 px-3 py-2 text-sm text-slate-700 dark:bg-slate-700 dark:text-slate-200">
-                    <span className="mb-0.5 block text-xs font-semibold opacity-70">{m.from}</span>
+                <div key={i} className={`flex ${m.mine ? 'justify-end' : 'justify-start'}`}>
+                  <div
+                    className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
+                      m.mine
+                        ? 'bg-brand-500 text-white'
+                        : 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
+                    }`}
+                  >
+                    {!m.mine && <span className="mb-0.5 block text-xs font-semibold opacity-70">{m.from}</span>}
                     {m.text}
                   </div>
                 </div>
               ))}
-              <p className="pt-1 text-xs text-slate-400 dark:text-slate-500">Join in WhatsApp to leave a message.</p>
+
+              {joined ? (
+                <MessageComposer activity={activity} onChange={setActivity} />
+              ) : (
+                <p className="pt-1 text-xs text-slate-400 dark:text-slate-500">Join in WhatsApp to leave a message.</p>
+              )}
             </div>
           </section>
         </div>
@@ -153,12 +209,12 @@ export default function ActivityDetail() {
         {/* Sidebar (tablet/desktop) — CTA + smart match */}
         <aside className="mt-4 lg:col-span-1 lg:mt-0">
           <div className="space-y-4 lg:sticky lg:top-[73px]">
-            {/* Desktop join CTA card (the fixed bottom bar covers mobile + tablet) */}
+            {/* Desktop CTA card */}
             <div className="hidden rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700 lg:block">
               <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
                 <span className="font-semibold text-slate-700 dark:text-slate-200">{activity.going.length} of {activity.capacity}</span> families going
               </p>
-              <WhatsAppButton label="I want to come 🙋" message={joinMessage} />
+              {joined ? <JoinedNote role={role} /> : <WhatsAppButton label="I want to come 🙋" message={joinMessage} />}
             </div>
 
             {/* Smart match */}
@@ -178,15 +234,238 @@ export default function ActivityDetail() {
         </aside>
       </div>
 
-      {/* Spacer so the fixed bottom CTA never covers content on mobile/tablet */}
-      <div className="h-20 lg:hidden" aria-hidden="true" />
+      {/* The fixed bottom CTA is only for people who haven't joined yet. */}
+      {!joined && (
+        <>
+          <div className="h-20 lg:hidden" aria-hidden="true" />
+          <div className="fixed inset-x-0 bottom-[57px] z-10 mx-auto max-w-2xl border-t border-rose-100 bg-white/95 p-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 md:bottom-0 lg:hidden">
+            <WhatsAppButton label="I want to come 🙋" message={joinMessage} />
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
-      {/* Sticky join CTA (mobile + tablet) — sits above the mobile tab bar */}
-      <div className="fixed inset-x-0 bottom-[57px] z-10 mx-auto max-w-2xl border-t border-rose-100 bg-white/95 p-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 md:bottom-0 lg:hidden">
-        <WhatsAppButton label="I want to come 🙋" message={joinMessage} />
+/** Small chip telling a joined user their role (replaces the join button). */
+function JoinedNote({ role }) {
+  return (
+    <div className="rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+      {role === 'owner' ? "✅ You're hosting this" : "✅ You're going"}
+    </div>
+  )
+}
+
+/** Owner-only edit + cancel controls. */
+function OwnerPanel({ activity, onChange }) {
+  const [editing, setEditing] = useState(false)
+
+  async function cancelActivity() {
+    if (!window.confirm('Cancel this activity? Everyone going will lose it from browse.')) return
+    try {
+      await apiSend('POST', `/api/activities/${activity.id}/cancel`)
+      onChange({ ...activity, status: 'cancelled' })
+    } catch (e) {
+      window.alert(e.message)
+    }
+  }
+
+  return (
+    <div className="rounded-2xl bg-brand-50 p-4 ring-1 ring-brand-100 dark:bg-brand-500/10 dark:ring-brand-500/20">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-bold text-brand-700 dark:text-brand-300">🛠️ You host this activity</p>
+        {!editing && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => setEditing(true)}
+              className="rounded-full bg-white px-3.5 py-1.5 text-sm font-semibold text-brand-700 shadow-sm transition hover:bg-brand-100 dark:bg-slate-800 dark:text-brand-300 dark:hover:bg-slate-700"
+            >
+              ✏️ Edit
+            </button>
+            <button
+              onClick={cancelActivity}
+              className="rounded-full bg-white px-3.5 py-1.5 text-sm font-semibold text-rose-600 shadow-sm transition hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-slate-700"
+            >
+              🗑️ Cancel
+            </button>
+          </div>
+        )}
+      </div>
+      {editing && (
+        <EditForm
+          activity={activity}
+          onDone={(updated) => {
+            if (updated) onChange(updated)
+            setEditing(false)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+/** The inline edit form. Sends only changed fields as a PATCH. */
+function EditForm({ activity, onDone }) {
+  const { data: spots } = useApi('/api/spots')
+  const [form, setForm] = useState({
+    title: activity.title,
+    when: toLocalInput(activity.when),
+    spotId: activity.spotId,
+    capacity: activity.capacity,
+    tags: (activity.tags || []).join(', '),
+    notes: activity.notes || '',
+    recurring: activity.recurring,
+  })
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState(null)
+
+  const set = (k) => (e) => {
+    const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value
+    setForm((f) => ({ ...f, [k]: v }))
+  }
+
+  async function save() {
+    setSaving(true)
+    setErr(null)
+    try {
+      const body = {
+        title: form.title.trim(),
+        when: new Date(form.when).toISOString(),
+        spotId: form.spotId,
+        capacity: Number(form.capacity),
+        tags: form.tags.split(',').map((t) => t.trim()).filter(Boolean),
+        notes: form.notes.trim(),
+        recurring: form.recurring,
+      }
+      const updated = await apiSend('PATCH', `/api/activities/${activity.id}`, { body })
+      onDone(updated)
+    } catch (e) {
+      setErr(e.message)
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="mt-3 space-y-3">
+      <Field label="Title">
+        <input className={inputClass} value={form.title} onChange={set('title')} />
+      </Field>
+      <Field label="Date & time">
+        <input type="datetime-local" className={inputClass} value={form.when} onChange={set('when')} />
+      </Field>
+      <Field label="Spot">
+        <select className={inputClass} value={form.spotId} onChange={set('spotId')}>
+          {(spots || []).map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name} — {s.area}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Capacity">
+          <input type="number" min="1" className={inputClass} value={form.capacity} onChange={set('capacity')} />
+        </Field>
+        <Field label="Weekly?">
+          <label className="flex h-[42px] items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+            <input type="checkbox" checked={form.recurring} onChange={set('recurring')} className="h-4 w-4" />
+            Repeats weekly
+          </label>
+        </Field>
+      </div>
+      <Field label="Tags (comma-separated)">
+        <input className={inputClass} value={form.tags} onChange={set('tags')} placeholder="sandbox, outdoor" />
+      </Field>
+      <Field label="Notes">
+        <textarea rows="2" className={inputClass} value={form.notes} onChange={set('notes')} />
+      </Field>
+
+      {err && <p className="text-sm font-semibold text-rose-600 dark:text-rose-400">{err}</p>}
+
+      <div className="flex gap-2">
+        <button
+          onClick={save}
+          disabled={saving}
+          className="rounded-full bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600 disabled:opacity-60"
+        >
+          {saving ? 'Saving…' : 'Save changes'}
+        </button>
+        <button
+          onClick={() => onDone(null)}
+          disabled={saving}
+          className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+        >
+          Discard
+        </button>
       </div>
     </div>
   )
+}
+
+/** Message input for owners & participants. */
+function MessageComposer({ activity, onChange }) {
+  const [text, setText] = useState('')
+  const [sending, setSending] = useState(false)
+  const [err, setErr] = useState(null)
+
+  async function send(e) {
+    e.preventDefault()
+    const body = text.trim()
+    if (!body || sending) return
+    setSending(true)
+    setErr(null)
+    try {
+      const messages = await apiSend('POST', `/api/activities/${activity.id}/messages`, {
+        body: { body },
+      })
+      onChange({ ...activity, messages })
+      setText('')
+    } catch (e) {
+      setErr(e.message)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <form onSubmit={send} className="pt-2">
+      <div className="flex gap-2">
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Write a message…"
+          className="flex-1 rounded-full bg-slate-100 px-4 py-2 text-sm text-slate-700 outline-none ring-1 ring-transparent focus:ring-brand-300 dark:bg-slate-700 dark:text-slate-100"
+        />
+        <button
+          type="submit"
+          disabled={sending || !text.trim()}
+          className="rounded-full bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60"
+        >
+          Send
+        </button>
+      </div>
+      {err && <p className="mt-1 text-xs font-semibold text-rose-600 dark:text-rose-400">{err}</p>}
+    </form>
+  )
+}
+
+const inputClass =
+  'w-full rounded-xl bg-white px-3 py-2.5 text-sm text-slate-800 outline-none ring-1 ring-slate-200 focus:ring-brand-400 dark:bg-slate-800 dark:text-slate-100 dark:ring-slate-600'
+
+function Field({ label, children }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">{label}</span>
+      {children}
+    </label>
+  )
+}
+
+/** ISO → `YYYY-MM-DDTHH:mm` in local time, for a `datetime-local` input. */
+function toLocalInput(iso) {
+  const d = new Date(iso)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 function Row({ icon, label, href }) {

@@ -12,11 +12,19 @@ export default function ActivityCard({ activity }) {
     >
       <div className="flex items-center justify-between">
         <GroupBadge groupId={activity.group} />
-        {activity.recurring && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-600 dark:bg-brand-500/15 dark:text-brand-300">
-            🔁 Weekly
-          </span>
-        )}
+        <div className="flex items-center gap-1.5">
+          {/* Set when the browse list is fetched with a valid session token. */}
+          {activity.viewer && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300">
+              {activity.viewer.role === 'owner' ? '🛠️ Hosting' : '✅ Going'}
+            </span>
+          )}
+          {activity.recurring && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-600 dark:bg-brand-500/15 dark:text-brand-300">
+              🔁 Weekly
+            </span>
+          )}
+        </div>
       </div>
 
       <h3 className="mt-2 text-lg font-bold text-slate-900 dark:text-slate-100">{activity.title}</h3>

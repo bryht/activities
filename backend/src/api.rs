@@ -1,17 +1,18 @@
 use axum::extract::{Path, Query, State};
-use axum::http::header;
+use axum::http::{header, HeaderMap};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
+use serde_json::json;
 use sqlx::{PgPool, QueryBuilder};
 use uuid::Uuid;
 
 use crate::error::{ApiResult, AppError};
 use crate::models::*;
 use crate::state::AppState;
-use crate::{matching, nlu};
+use crate::{auth, matching, nlu};
 
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -19,10 +20,12 @@ pub fn router(state: AppState) -> Router {
         .route("/api/groups", get(list_groups))
         .route("/api/spots", get(list_spots))
         .route("/api/activities", get(list_activities).post(create_activity))
-        .route("/api/activities/:id", get(get_activity))
+        .route("/api/activities/:id", get(get_activity).patch(update_activity))
         .route("/api/activities/:id/calendar.ics", get(activity_calendar))
         .route("/api/activities/:id/join", post(join_activity))
+        .route("/api/activities/:id/cancel", post(cancel_activity))
         .route("/api/activities/:id/messages", post(post_message))
+        .route("/api/auth/link-token", post(create_link_token))
         .route("/api/users", post(upsert_user))
         .route("/api/users/by-phone/:phone", get(user_by_phone))
         .route("/api/users/:id/activities", get(user_activities))
@@ -33,7 +36,7 @@ pub fn router(state: AppState) -> Router {
 /// Shared projection: one activity row with host, spot and participant nicknames.
 const SELECT_ACTIVITY: &str = r#"
 SELECT a.id, a.title, a.group_id, a.spot_id, a.area, a.tags, a.starts_at, a.recurring,
-       a.capacity, a.notes,
+       a.capacity, a.notes, a.status,
        a.host_id AS host_id, h.nickname AS host_name, h.child_stage AS host_stage,
        hg.age_range AS host_child_range,
        s.name AS spot_name, s.area AS spot_area, s.type AS spot_type, s.ages AS spot_ages,
@@ -82,10 +85,14 @@ struct ListFilters {
     date: Option<String>,
     /// date | area
     sort: Option<String>,
+    /// Optional manage token — annotates each activity with the viewer's role
+    /// so the browse list can show "going"/"hosting" and hide the join button.
+    token: Option<String>,
 }
 
 async fn list_activities(
     State(st): State<AppState>,
+    headers: HeaderMap,
     Query(f): Query<ListFilters>,
 ) -> ApiResult<Json<Vec<Activity>>> {
     let mut qb = QueryBuilder::new(SELECT_ACTIVITY);
@@ -115,24 +122,79 @@ async fn list_activities(
     };
 
     let rows: Vec<ActivityRow> = qb.build_query_as().fetch_all(&st.pool).await?;
-    let out = rows.into_iter().map(|r| r.into_activity(vec![])).collect();
+
+    // Annotate each row with the viewer's role, if a valid token was supplied.
+    // One batch query fetches which of these activities they've joined.
+    let viewer = optional_auth(&st, &headers, &f.token);
+    let joined: std::collections::HashSet<Uuid> = match viewer {
+        Some(uid) => {
+            let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
+            sqlx::query_scalar(
+                "SELECT activity_id FROM kidgo_participants
+                 WHERE user_id = $1 AND activity_id = ANY($2)",
+            )
+            .bind(uid)
+            .bind(&ids)
+            .fetch_all(&st.pool)
+            .await?
+            .into_iter()
+            .collect()
+        }
+        None => Default::default(),
+    };
+
+    let out = rows
+        .into_iter()
+        .map(|r| {
+            let role = viewer.and_then(|uid| {
+                if uid == r.host_id {
+                    Some("owner")
+                } else if joined.contains(&r.id) {
+                    Some("participant")
+                } else {
+                    None
+                }
+            });
+            let mut a = r.into_activity(vec![]);
+            a.viewer = role.map(|role| ViewerInfo { id: viewer.unwrap(), role: role.into() });
+            a
+        })
+        .collect();
     Ok(Json(out))
 }
 
+/// A manage token may arrive as `?token=` (the link the bot sends) or as an
+/// `Authorization: Bearer` header (writes issued by the frontend).
 #[derive(Deserialize)]
-struct Viewer {
-    #[serde(rename = "userId")]
-    user_id: Option<Uuid>,
+struct AuthQuery {
+    token: Option<String>,
 }
 
 async fn get_activity(
     State(st): State<AppState>,
     Path(id): Path<Uuid>,
-    Query(v): Query<Viewer>,
+    headers: HeaderMap,
+    Query(q): Query<AuthQuery>,
 ) -> ApiResult<Json<Activity>> {
     let row = fetch_activity_row(&st.pool, id).await?.ok_or(AppError::NotFound)?;
-    let messages = fetch_messages(&st.pool, id, v.user_id).await?;
-    Ok(Json(row.into_activity(messages)))
+    let host_id = row.host_id;
+
+    // An expired/invalid token on a read just degrades to the public view, so a
+    // stale link still shows the activity (with the "I want to come" button)
+    // instead of an error — the parent re-requests a fresh link to manage it.
+    let viewer_id = optional_auth(&st, &headers, &q.token);
+    let role = match viewer_id {
+        Some(uid) => viewer_role(&st.pool, id, uid, host_id).await?,
+        None => None,
+    };
+
+    let messages = fetch_messages(&st.pool, id, viewer_id).await?;
+    let mut activity = row.into_activity(messages);
+    activity.viewer = role.map(|r| ViewerInfo {
+        id: viewer_id.unwrap(),
+        role: r.into(),
+    });
+    Ok(Json(activity))
 }
 
 /// Serve an activity as a downloadable `.ics` calendar file.
@@ -257,21 +319,18 @@ async fn join_activity(
 async fn post_message(
     State(st): State<AppState>,
     Path(id): Path<Uuid>,
+    headers: HeaderMap,
+    Query(q): Query<AuthQuery>,
     Json(body): Json<PostMessage>,
 ) -> ApiResult<Json<Vec<Message>>> {
+    // The token proves who is posting (PRD §4.4); the body no longer carries a
+    // user id, so a parent can only ever message as themselves.
+    let user_id = require_auth(&st, &headers, &q.token)?;
     if body.body.trim().is_empty() {
         return Err(AppError::BadRequest("message body is empty".into()));
     }
-    // Privacy (PRD §4.4): only the host or a participant may post.
-    let allowed: Option<i32> = sqlx::query_scalar(
-        "SELECT 1 FROM kidgo_participants WHERE activity_id = $1 AND user_id = $2
-         UNION SELECT 1 FROM kidgo_activities WHERE id = $1 AND host_id = $2",
-    )
-    .bind(id)
-    .bind(body.user_id)
-    .fetch_optional(&st.pool)
-    .await?;
-    if allowed.is_none() {
+    // Only the host or a participant may post.
+    if viewer_role(&st.pool, id, user_id, host_id_of(&st.pool, id).await?).await?.is_none() {
         return Err(AppError::Conflict("join the activity before messaging".into()));
     }
 
@@ -280,13 +339,138 @@ async fn post_message(
     )
     .bind(Uuid::new_v4())
     .bind(id)
-    .bind(body.user_id)
+    .bind(user_id)
     .bind(body.body.trim())
     .execute(&st.pool)
     .await?;
 
-    let messages = fetch_messages(&st.pool, id, Some(body.user_id)).await?;
+    let messages = fetch_messages(&st.pool, id, Some(user_id)).await?;
     Ok(Json(messages))
+}
+
+/// Mint a one-hour manage link token for a user. Called by the bot when it
+/// lists "My activities" so each activity link carries `?token=…`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LinkTokenBody {
+    user_id: Uuid,
+}
+
+async fn create_link_token(
+    State(st): State<AppState>,
+    Json(body): Json<LinkTokenBody>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let exists: Option<Uuid> = sqlx::query_scalar("SELECT id FROM kidgo_users WHERE id = $1")
+        .bind(body.user_id)
+        .fetch_optional(&st.pool)
+        .await?;
+    if exists.is_none() {
+        return Err(AppError::NotFound);
+    }
+    let (token, expires_at) = auth::mint(&st.link_secret, body.user_id);
+    Ok(Json(json!({ "token": token, "expiresAt": expires_at })))
+}
+
+async fn update_activity(
+    State(st): State<AppState>,
+    Path(id): Path<Uuid>,
+    headers: HeaderMap,
+    Query(q): Query<AuthQuery>,
+    Json(body): Json<UpdateActivity>,
+) -> ApiResult<Json<Activity>> {
+    let user_id = require_auth(&st, &headers, &q.token)?;
+    let host_id = host_id_of(&st.pool, id).await?;
+    if host_id != user_id {
+        return Err(AppError::Forbidden("only the host can edit this activity".into()));
+    }
+
+    // Spot drives the area, so resolve the new area up front if the spot changes.
+    let new_area: Option<String> = match &body.spot_id {
+        Some(spot_id) => Some(
+            sqlx::query_scalar("SELECT area FROM kidgo_spots WHERE id = $1")
+                .bind(spot_id)
+                .fetch_optional(&st.pool)
+                .await?
+                .ok_or_else(|| AppError::BadRequest("unknown spot".into()))?,
+        ),
+        None => None,
+    };
+
+    let mut qb = QueryBuilder::new("UPDATE kidgo_activities SET ");
+    let mut n = 0;
+    {
+        let mut set = qb.separated(", ");
+        if let Some(v) = &body.title {
+            set.push("title = ").push_bind_unseparated(v);
+            n += 1;
+        }
+        if let Some(v) = body.when {
+            set.push("starts_at = ").push_bind_unseparated(v);
+            n += 1;
+        }
+        if let Some(v) = &body.tags {
+            set.push("tags = ").push_bind_unseparated(v);
+            n += 1;
+        }
+        if let Some(v) = body.capacity {
+            set.push("capacity = ").push_bind_unseparated(v);
+            n += 1;
+        }
+        if let Some(v) = &body.notes {
+            set.push("notes = ").push_bind_unseparated(v);
+            n += 1;
+        }
+        if let Some(v) = body.recurring {
+            set.push("recurring = ").push_bind_unseparated(v);
+            n += 1;
+        }
+        if let (Some(spot_id), Some(area)) = (&body.spot_id, &new_area) {
+            set.push("spot_id = ").push_bind_unseparated(spot_id);
+            set.push("area = ").push_bind_unseparated(area);
+            n += 1;
+        }
+    }
+
+    if n > 0 {
+        qb.push(" WHERE id = ").push_bind(id);
+        qb.build().execute(&st.pool).await?;
+    }
+
+    let row = fetch_activity_row(&st.pool, id).await?.ok_or(AppError::NotFound)?;
+    let mut activity = row.into_activity(vec![]);
+    activity.viewer = Some(ViewerInfo { id: user_id, role: "owner".into() });
+    Ok(Json(activity))
+}
+
+/// Soft-cancel: set status='cancelled' so the activity drops out of browse/join
+/// (those queries filter `status = 'open'`) while keeping its history & messages.
+async fn cancel_activity(
+    State(st): State<AppState>,
+    Path(id): Path<Uuid>,
+    headers: HeaderMap,
+    Query(q): Query<AuthQuery>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let user_id = require_auth(&st, &headers, &q.token)?;
+    let result = sqlx::query(
+        "UPDATE kidgo_activities SET status = 'cancelled'
+         WHERE id = $1 AND host_id = $2 AND status = 'open'",
+    )
+    .bind(id)
+    .bind(user_id)
+    .execute(&st.pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        // Distinguish "not yours" from "gone / already cancelled" for a clear error.
+        return Err(match host_id_lookup(&st.pool, id).await? {
+            Some(host) if host != user_id => {
+                AppError::Forbidden("only the host can cancel this activity".into())
+            }
+            Some(_) => AppError::Conflict("this activity is already cancelled".into()),
+            None => AppError::NotFound,
+        });
+    }
+    Ok(Json(json!({ "status": "cancelled" })))
 }
 
 // ---------- Users ----------
@@ -370,6 +554,66 @@ async fn parse_sentence(
 async fn fetch_activity_row(pool: &PgPool, id: Uuid) -> Result<Option<ActivityRow>, sqlx::Error> {
     let sql = format!("{SELECT_ACTIVITY} WHERE a.id = $1");
     sqlx::query_as::<_, ActivityRow>(&sql)
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+}
+
+// ---------- auth helpers ----------
+
+/// Read a manage token from the `?token=` query or an `Authorization: Bearer`
+/// header (query wins, since that's the link the bot hands out).
+fn extract_token(headers: &HeaderMap, query: &Option<String>) -> Option<String> {
+    if let Some(t) = query.as_deref().filter(|t| !t.is_empty()) {
+        return Some(t.to_string());
+    }
+    headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(|t| t.trim().to_string())
+}
+
+/// Resolve the viewer for a read: a missing or invalid token is simply anonymous.
+fn optional_auth(st: &AppState, headers: &HeaderMap, query: &Option<String>) -> Option<Uuid> {
+    let token = extract_token(headers, query)?;
+    auth::verify(&st.link_secret, &token).ok()
+}
+
+/// Resolve the user for a write: a missing/invalid/expired token is a hard 401.
+fn require_auth(st: &AppState, headers: &HeaderMap, query: &Option<String>) -> ApiResult<Uuid> {
+    let token = extract_token(headers, query)
+        .ok_or_else(|| AppError::Unauthorized("a manage link is required for this action".into()))?;
+    auth::verify(&st.link_secret, &token)
+}
+
+/// The viewer's role on an activity: owner (host), participant, or neither.
+async fn viewer_role(
+    pool: &PgPool,
+    activity_id: Uuid,
+    user_id: Uuid,
+    host_id: Uuid,
+) -> Result<Option<&'static str>, sqlx::Error> {
+    if user_id == host_id {
+        return Ok(Some("owner"));
+    }
+    let joined: Option<i32> = sqlx::query_scalar(
+        "SELECT 1 FROM kidgo_participants WHERE activity_id = $1 AND user_id = $2",
+    )
+    .bind(activity_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(joined.map(|_| "participant"))
+}
+
+/// Host id for an existing activity, or `NotFound`.
+async fn host_id_of(pool: &PgPool, id: Uuid) -> ApiResult<Uuid> {
+    host_id_lookup(pool, id).await?.ok_or(AppError::NotFound)
+}
+
+async fn host_id_lookup(pool: &PgPool, id: Uuid) -> Result<Option<Uuid>, sqlx::Error> {
+    sqlx::query_scalar("SELECT host_id FROM kidgo_activities WHERE id = $1")
         .bind(id)
         .fetch_optional(pool)
         .await
@@ -503,6 +747,7 @@ mod tests {
             recurring,
             capacity: 6,
             notes: notes.map(Into::into),
+            status: "open".into(),
             host_id: Uuid::nil(),
             host_name: "Amy".into(),
             host_stage: Some("toddler".into()),

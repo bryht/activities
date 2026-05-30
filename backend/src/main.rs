@@ -1,4 +1,5 @@
 mod api;
+mod auth;
 mod error;
 mod matching;
 mod models;
@@ -6,6 +7,7 @@ mod nlu;
 mod seed;
 mod state;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use sqlx::postgres::PgPoolOptions;
@@ -55,7 +57,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     seed::run(&pool).await?;
     tracing::info!("schema ready, reference data seeded");
 
-    let state = AppState { pool, llm: LlmConfig::from_env() };
+    let state = AppState {
+        pool,
+        llm: LlmConfig::from_env(),
+        link_secret: Arc::new(auth::load_secret()),
+    };
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
