@@ -26,6 +26,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/activities/:id/cancel", post(cancel_activity))
         .route("/api/activities/:id/messages", post(post_message))
         .route("/api/auth/link-token", post(create_link_token))
+        .route("/api/links", post(create_links))
+        .route("/api/links/:code", get(resolve_link))
         .route("/api/users", post(upsert_user))
         .route("/api/users/by-phone/:phone", get(user_by_phone))
         .route("/api/users/:id/activities", get(user_activities))
@@ -369,6 +371,112 @@ async fn create_link_token(
     }
     let (token, expires_at) = auth::mint(&st.link_secret, body.user_id);
     Ok(Json(json!({ "token": token, "expiresAt": expires_at })))
+}
+
+/// Unambiguous base32 alphabet (digits 2-9 + A-Z without I/O) for short codes.
+/// 256 % 32 == 0, so mapping a random byte with `% 32` is perfectly uniform.
+const CODE_ALPHABET: &[u8; 32] = b"23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+const CODE_LEN: usize = 7;
+
+fn gen_code() -> String {
+    Uuid::new_v4()
+        .into_bytes()
+        .iter()
+        .take(CODE_LEN)
+        .map(|b| CODE_ALPHABET[(*b as usize) % 32] as char)
+        .collect()
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateLinks {
+    user_id: Uuid,
+    activity_ids: Vec<Uuid>,
+}
+
+/// Create short manage codes for a batch of the user's activities. Returns one
+/// `{ activityId, code }` per existing activity, all sharing one 1-hour expiry.
+async fn create_links(
+    State(st): State<AppState>,
+    Json(body): Json<CreateLinks>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let exists: Option<Uuid> = sqlx::query_scalar("SELECT id FROM kidgo_users WHERE id = $1")
+        .bind(body.user_id)
+        .fetch_optional(&st.pool)
+        .await?;
+    if exists.is_none() {
+        return Err(AppError::NotFound);
+    }
+
+    // Opportunistically sweep expired codes so the table stays small.
+    sqlx::query("DELETE FROM kidgo_link_codes WHERE expires_at < now()")
+        .execute(&st.pool)
+        .await?;
+
+    let expires_at = Utc::now() + Duration::minutes(auth::TOKEN_TTL_MINUTES);
+    let mut links = Vec::new();
+    for activity_id in body.activity_ids {
+        // Skip ids that don't resolve to a real activity.
+        let activity_exists: Option<Uuid> =
+            sqlx::query_scalar("SELECT id FROM kidgo_activities WHERE id = $1")
+                .bind(activity_id)
+                .fetch_optional(&st.pool)
+                .await?;
+        if activity_exists.is_none() {
+            continue;
+        }
+
+        // Insert with a fresh code, retrying on the (vanishingly rare) collision.
+        let mut code = gen_code();
+        for _ in 0..5 {
+            let res = sqlx::query(
+                "INSERT INTO kidgo_link_codes (code, user_id, activity_id, expires_at)
+                 VALUES ($1,$2,$3,$4)",
+            )
+            .bind(&code)
+            .bind(body.user_id)
+            .bind(activity_id)
+            .bind(expires_at)
+            .execute(&st.pool)
+            .await;
+            match res {
+                Ok(_) => break,
+                Err(sqlx::Error::Database(e)) if e.is_unique_violation() => code = gen_code(),
+                Err(e) => return Err(e.into()),
+            }
+        }
+        links.push(json!({ "activityId": activity_id, "code": code }));
+    }
+
+    Ok(Json(json!({ "expiresAt": expires_at, "links": links })))
+}
+
+/// Resolve a short code into a session token (and the activity to open).
+/// Unknown code → 404. Expired code → `expired: true` with no token, so the
+/// landing page can offer a one-tap refresh via the bot.
+async fn resolve_link(
+    State(st): State<AppState>,
+    Path(code): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let row: Option<(Uuid, Uuid, DateTime<Utc>)> = sqlx::query_as(
+        "SELECT user_id, activity_id, expires_at FROM kidgo_link_codes WHERE code = $1",
+    )
+    .bind(&code)
+    .fetch_optional(&st.pool)
+    .await?;
+    let (user_id, activity_id, expires_at) = row.ok_or(AppError::NotFound)?;
+
+    if expires_at <= Utc::now() {
+        return Ok(Json(json!({ "activityId": activity_id, "expired": true })));
+    }
+
+    let (token, token_exp) = auth::mint(&st.link_secret, user_id);
+    Ok(Json(json!({
+        "activityId": activity_id,
+        "token": token,
+        "expired": false,
+        "expiresAt": token_exp,
+    })))
 }
 
 async fn update_activity(

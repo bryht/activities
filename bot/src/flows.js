@@ -155,12 +155,16 @@ async function mainMenu(s, user, msg, lower, reply) {
   if (lower === '3' || lower.startsWith('mine') || lower.startsWith('my')) {
     const mine = await api.myActivities(user.id)
     if (!mine.length) return reply('You have no activities yet. Reply 1 to post one!')
-    // Each activity gets a manage link carrying a 1-hour token. The website reads
-    // it to know whether you're the host (edit/cancel/message) or a participant
-    // (message) — no "I want to come" button, since you've already joined.
-    const { token } = await api.linkToken(user.id)
+    // Each activity gets a short manage link (/m/<code>). Opening it logs you in
+    // for an hour so the website knows whether you're the host (edit/cancel/
+    // message) or a participant (message) — no "I want to come" button.
+    const { links } = await api.createLinks(user.id, mine.map((a) => a.id))
+    const codeFor = new Map(links.map((l) => [l.activityId, l.code]))
     const body = mine
-      .map((a, i) => `${fmtActivity(a, i)}\n   🔧 Manage: ${WEB_BASE}/activities/${a.id}?token=${token}`)
+      .map((a, i) => {
+        const code = codeFor.get(a.id)
+        return code ? `${fmtActivity(a, i)}\n   🔧 Manage: ${WEB_BASE}/m/${code}` : fmtActivity(a, i)
+      })
       .join('\n\n')
     return reply(`📋 *Your activities*\n\n${body}\n\n_Manage links expire in 1 hour — just ask for this list again to refresh them._`)
   }
@@ -293,10 +297,11 @@ async function manageByRef(s, user, activityId, reply) {
     )
     return
   }
-  const { token } = await api.linkToken(user.id)
+  const { links } = await api.createLinks(user.id, [a.id])
+  const code = links[0]?.code
   const role = a.host.id === user.id ? 'host' : 'going'
   await reply(
-    `🔑 Fresh link for *${a.title}* (you're ${role}):\n${WEB_BASE}/activities/${a.id}?token=${token}\n\n_Valid for 1 hour._`,
+    `🔑 Fresh link for *${a.title}* (you're ${role}):\n${WEB_BASE}/m/${code}\n\n_Valid for 1 hour._`,
   )
 }
 

@@ -39,6 +39,18 @@ export async function apiSend(method, path, { body, token } = {}) {
   return res.status === 204 ? null : res.json()
 }
 
+/**
+ * Exchange a short manage code for a session token + target activity.
+ * Returns `null` for an unknown code (404); the body otherwise (which may carry
+ * `{ expired: true }`).
+ */
+export async function resolveLink(code) {
+  const res = await fetch(`${API_BASE}/api/links/${encodeURIComponent(code)}`)
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  return res.json()
+}
+
 /** Generic data hook. `path` of `null` skips the fetch. */
 export function useApi(path) {
   const [data, setData] = useState(null)
