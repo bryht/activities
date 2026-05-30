@@ -177,40 +177,54 @@ async function mainMenu(s, user, msg, lower, reply) {
     const noun = stages.length > 1 ? 'Stages' : 'Stage'
     return reply(`👤 *${user.nickname}*\n📍 ${user.city}\n🧒 ${noun}: ${label}\n\n${MENU}`)
   }
-  // Fall back to treating free text as an activity sentence.
+  // Fall back to treating free text as an activity sentence — but only commit to
+  // the posting flow if it actually looks like one (a day/time is detectable).
+  // Otherwise plain chatter would silently drop the user into "Which spot?".
   if (msg.length > 6) {
-    return postFromSentence(s, user, msg, reply)
+    return postFromSentence(s, user, msg, reply, { fromMenu: true })
   }
   await reply(MENU)
 }
 
 // ---- posting (Scenario A) ----
 
-async function postFromSentence(s, user, msg, reply) {
+async function postFromSentence(s, user, msg, reply, { fromMenu = false } = {}) {
   const parsed = await api.parse(msg)
+  if (!parsed.when) {
+    // No time found. From the explicit "post" flow, coach them; from free-text
+    // chatter, don't hijack the conversation — just show the menu.
+    if (fromMenu) {
+      await reply("Sorry, I didn't quite get that.\n\n" + MENU)
+      return
+    }
+    s.step = 'post_sentence'
+    await reply('I couldn’t catch the day/time. Try e.g. “Saturday 2pm …” or type *cancel*.')
+    return
+  }
   s.data.draft = {
     when: parsed.when,
     spotId: parsed.spotId,
     tags: parsed.tags || [],
     title: parsed.title || undefined,
   }
-  if (!parsed.when) {
-    s.step = 'post_sentence'
-    await reply('I couldn’t catch the day/time. Try e.g. “Saturday 2pm …” or type *cancel*.')
-    return
-  }
+  // When we inferred "posting" from free text, say so up front so it's not a
+  // context-free jump.
+  const lead = fromMenu ? '📝 Looks like you want to post an activity!\n\n' : ''
   if (!parsed.spotId) {
-    return postPickSpotPrompt(s, reply)
+    return postPickSpotPrompt(s, reply, lead)
   }
-  return showConfirm(s, reply)
+  return showConfirm(s, reply, lead)
 }
 
-async function postPickSpotPrompt(s, reply) {
+async function postPickSpotPrompt(s, reply, lead = '') {
   s.step = 'post_pick_spot'
   const spots = await api.spots()
   s.data.spots = spots
   const list = spots.map((sp, i) => `${i + 1}. ${sp.name} (${sp.area})`).join('\n')
-  await reply(`Which spot?\n${list}`)
+  // Echo the day/time we understood so the spot question has context.
+  await reply(
+    `${lead}📅 ${fmtTime(s.data.draft.when)}\n\n📍 Where is it? Reply with a number (or *cancel*):\n${list}`,
+  )
 }
 
 async function postPickSpot(s, user, msg, reply) {
@@ -222,13 +236,13 @@ async function postPickSpot(s, user, msg, reply) {
   return showConfirm(s, reply)
 }
 
-async function showConfirm(s, reply) {
+async function showConfirm(s, reply, lead = '') {
   const d = s.data.draft
   const spots = await api.spots()
   const spot = spots.find((x) => x.id === d.spotId)
   s.step = 'post_confirm'
   await reply(
-    `Please confirm:\n\n📅 ${fmtTime(d.when)}\n📍 ${spot ? spot.name : d.spotId}\n🏷️ ${
+    `${lead}Please confirm:\n\n📅 ${fmtTime(d.when)}\n📍 ${spot ? spot.name : d.spotId}\n🏷️ ${
       d.tags.length ? d.tags.join(', ') : '—'
     }\n\nReply *yes* to post, or *no* to discard.`,
   )
