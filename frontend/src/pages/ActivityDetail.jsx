@@ -1,6 +1,7 @@
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useApi, activitiesQuery } from '../lib/api'
 import { dayLabel, timeLabel } from '../lib/datetime'
+import { mapsUrl, googleCalendarUrl } from '../lib/links'
 import GroupBadge from '../components/GroupBadge'
 import WhatsAppButton from '../components/WhatsAppButton'
 import ActivityCard from '../components/ActivityCard'
@@ -61,9 +62,32 @@ export default function ActivityDetail() {
 
             <dl className="mt-4 space-y-2 text-sm">
               <Row icon="🗓️" label={`${dayLabel(activity.when)} · ${timeLabel(activity.when)}`} />
-              <Row icon="📍" label={`${spot?.name} — ${activity.area} (${spot?.type})`} />
+              <Row
+                icon="📍"
+                label={`${spot?.name} — ${activity.area} (${spot?.type})`}
+                href={mapsUrl(spot, activity.area)}
+              />
               <Row icon="👨‍👩‍👧" label={`${activity.going.length} of ${activity.capacity} families going`} />
             </dl>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <a
+                href={googleCalendarUrl(activity, spot)}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
+              >
+                🗓️ Add to calendar
+              </a>
+              <a
+                href={mapsUrl(spot, activity.area)}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
+              >
+                📍 Open in Maps
+              </a>
+            </div>
 
             <div className="mt-3 flex flex-wrap gap-1.5">
               {activity.tags.map((t) => (
@@ -166,11 +190,24 @@ export default function ActivityDetail() {
   )
 }
 
-function Row({ icon, label }) {
-  return (
-    <div className="flex items-start gap-2 text-slate-600">
+function Row({ icon, label, href }) {
+  const inner = (
+    <>
       <span>{icon}</span>
       <span className="font-medium">{label}</span>
-    </div>
+    </>
   )
+  if (href) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="flex items-start gap-2 text-slate-600 underline-offset-2 transition hover:text-brand-600 hover:underline"
+      >
+        {inner}
+      </a>
+    )
+  }
+  return <div className="flex items-start gap-2 text-slate-600">{inner}</div>
 }
