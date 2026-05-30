@@ -46,9 +46,9 @@ export default function Activities() {
 
   return (
     <div>
-      <div className="sticky top-[57px] z-10 space-y-3 border-b border-rose-100 bg-rose-50/80 px-4 py-3 backdrop-blur">
+      <div className="sticky top-[57px] z-10 space-y-3 border-b border-rose-100 bg-rose-50/80 px-4 py-3 backdrop-blur sm:px-6">
         {/* Date */}
-        <div className="flex gap-2 overflow-x-auto no-scrollbar">
+        <div className="flex gap-2 overflow-x-auto no-scrollbar md:flex-wrap md:overflow-visible">
           {DATE_FILTERS.map((d) => (
             <Chip key={d.id} active={dateFilter === d.id} onClick={() => setDateFilter(d.id)}>
               {d.label}
@@ -61,7 +61,7 @@ export default function Activities() {
         </div>
 
         {/* Group */}
-        <div className="flex gap-2 overflow-x-auto no-scrollbar">
+        <div className="flex gap-2 overflow-x-auto no-scrollbar md:flex-wrap md:overflow-visible">
           <Chip active={group === 'all'} onClick={() => setGroup('all')}>
             All stages
           </Chip>
@@ -73,7 +73,7 @@ export default function Activities() {
         </div>
 
         {/* Area */}
-        <div className="flex gap-2 overflow-x-auto no-scrollbar">
+        <div className="flex gap-2 overflow-x-auto no-scrollbar md:flex-wrap md:overflow-visible">
           <Chip active={area === 'all'} onClick={() => setArea('all')}>
             All areas
           </Chip>
@@ -85,16 +85,16 @@ export default function Activities() {
         </div>
       </div>
 
-      <div className="px-4 py-4">
+      <div className="px-4 py-4 sm:px-6">
         <p className="mb-3 text-sm text-slate-500">
           {loading ? 'Loading…' : `${results.length} ${results.length === 1 ? 'activity' : 'activities'}`}
         </p>
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {results.map((a) => (
             <ActivityCard key={a.id} activity={a} />
           ))}
           {!loading && (error || results.length === 0) && (
-            <div className="rounded-2xl bg-white p-8 text-center text-slate-400 ring-1 ring-slate-100">
+            <div className="rounded-2xl bg-white p-8 text-center text-slate-400 ring-1 ring-slate-100 sm:col-span-2 lg:col-span-3">
               <p className="text-3xl">🔍</p>
               <p className="mt-2 text-sm">
                 {error ? 'Couldn’t load activities.' : 'No activities match these filters yet.'}

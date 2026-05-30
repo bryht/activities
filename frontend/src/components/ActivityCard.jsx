@@ -8,7 +8,7 @@ export default function ActivityCard({ activity }) {
   return (
     <Link
       to={`/activities/${activity.id}`}
-      className="block rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 transition active:scale-[0.99] hover:shadow-md"
+      className="flex h-full flex-col rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 transition active:scale-[0.99] hover:shadow-md"
     >
       <div className="flex items-center justify-between">
         <GroupBadge groupId={activity.group} />
@@ -34,7 +34,7 @@ export default function ActivityCard({ activity }) {
         ))}
       </div>
 
-      <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
+      <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-3">
         <div className="flex items-center gap-2 text-sm text-slate-500">
           <span className="grid h-7 w-7 place-items-center rounded-full bg-brand-100 text-xs font-bold text-brand-700">
             {activity.host.name[0]}
