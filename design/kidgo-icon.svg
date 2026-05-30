@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="kidgo icon">
+  <defs>
+    <linearGradient id="kg-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff8a3d"/>
+      <stop offset="1" stop-color="#ff5d73"/>
+    </linearGradient>
+    <linearGradient id="kg-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff7ef"/>
+      <stop offset="1" stop-color="#ffe9d6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- rounded-square app tile -->
+  <rect width="512" height="512" rx="116" fill="url(#kg-bg)"/>
+
+  <g transform="translate(256 256)">
+    <!-- motion / speed lines (the "go") -->
+    <g stroke="#36c5f0" stroke-width="20" stroke-linecap="round">
+      <line x1="-176" y1="-34" x2="-118" y2="-34"/>
+      <line x1="-188" y1="14"  x2="-110" y2="14"/>
+      <line x1="-172" y1="62"  x2="-122" y2="62"/>
+    </g>
+
+    <!-- mascot head -->
+    <circle cx="22" cy="0" r="150" fill="url(#kg-grad)"/>
+
+    <!-- face -->
+    <circle cx="-22" cy="-14" r="20" fill="#fff"/>
+    <circle cx="58"  cy="-14" r="20" fill="#fff"/>
+    <circle cx="-22" cy="-10" r="9"  fill="#3a2b2b"/>
+    <circle cx="58"  cy="-10" r="9"  fill="#3a2b2b"/>
+    <path d="M-30 44 C -2 84, 50 84, 78 44"
+          fill="none" stroke="#fff" stroke-width="16" stroke-linecap="round"/>
+
+    <!-- spark / star -->
+    <path d="M150 -120 l11 26 26 11 -26 11 -11 26 -11 -26 -26 -11 26 -11 z"
+          fill="#ffd23f"/>
+  </g>
+</svg>
