@@ -43,6 +43,10 @@ jobs:
           SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
           SSH_PORT: ${{ vars.DEPLOY_SSH_PORT || '22' }}
           DEPLOY_PATH: ${{ vars.KIDGO_DEPLOY_PATH || '/opt/kidgo' }}
+          # HMAC key for manage-link tokens (auth.rs). Optional: when set, we
+          # upsert it into the server's .env so links survive restarts. Leave the
+          # secret unset to manage the value by hand on the box instead.
+          LINK_SECRET: ${{ secrets.KIDGO_LINK_SECRET }}
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
@@ -52,8 +56,21 @@ jobs:
           # Upload to a temp path, then atomically swap in & restart (sudo).
           scp -P "$SSH_PORT" -i ~/.ssh/id_deploy \
             backend/kidgo-api "$SSH_USER@$SSH_HOST:/tmp/kidgo-api.new"
+
+          # Set KIDGO_LINK_SECRET on the server only when the GitHub secret is
+          # provided — replacing just that line, never touching DATABASE_URL etc.
+          if [ -n "$LINK_SECRET" ]; then
+            ENV_UPDATE="sudo touch '$DEPLOY_PATH/.env' \
+              && sudo sed -i '/^KIDGO_LINK_SECRET=/d' '$DEPLOY_PATH/.env' \
+              && echo 'KIDGO_LINK_SECRET=$LINK_SECRET' | sudo tee -a '$DEPLOY_PATH/.env' >/dev/null \
+              && sudo chmod 600 '$DEPLOY_PATH/.env'"
+          else
+            ENV_UPDATE="true"
+          fi
+
           ssh -p "$SSH_PORT" -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" \
             "sudo install -o root -g root -m 755 /tmp/kidgo-api.new '$DEPLOY_PATH/kidgo-api' \
              && rm -f /tmp/kidgo-api.new \
+             && $ENV_UPDATE \
              && sudo systemctl restart kidgo-api \
              && sleep 2 && systemctl is-active kidgo-api"
