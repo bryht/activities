@@ -1,0 +1,59 @@
+name: Deploy API
+
+# Ships the Rust API to the server. We cross-build a glibc binary inside an
+# Ubuntu 20.04 container (matching the host's libc — the box is too small to
+# compile Rust on), then scp it to /opt/kidgo and restart the systemd service.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
+
+# One deploy at a time; let an in-flight run finish rather than ship a half-copy.
+concurrency:
+  group: deploy-api
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cross-build glibc binary (Ubuntu 20.04)
+        working-directory: backend
+        run: |
+          docker build -t kidgo-api-build -f Dockerfile.ubuntu20 .
+          cid=$(docker create kidgo-api-build)
+          docker cp "$cid:/app/target/release/kidgo-api" ./kidgo-api
+          docker rm "$cid"
+          chmod +x ./kidgo-api
+          file ./kidgo-api
+
+      - name: Ship to server & restart
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          SSH_PORT: ${{ vars.DEPLOY_SSH_PORT || '22' }}
+          DEPLOY_PATH: ${{ vars.KIDGO_DEPLOY_PATH || '/opt/kidgo' }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+          # Upload to a temp path, then atomically swap in & restart (sudo).
+          scp -P "$SSH_PORT" -i ~/.ssh/id_deploy \
+            backend/kidgo-api "$SSH_USER@$SSH_HOST:/tmp/kidgo-api.new"
+          ssh -p "$SSH_PORT" -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" \
+            "sudo install -o root -g root -m 755 /tmp/kidgo-api.new '$DEPLOY_PATH/kidgo-api' \
+             && rm -f /tmp/kidgo-api.new \
+             && sudo systemctl restart kidgo-api \
+             && sleep 2 && systemctl is-active kidgo-api"

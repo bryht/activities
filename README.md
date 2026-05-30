@@ -46,7 +46,32 @@ Website (React static) ─┘
 
 ## Deployment
 
-- **API** runs as a `systemd` service (`/opt/kidgo`) on the Linux host behind nginx at
-  `api.bryht.net/kid-go`, against the shared PostgreSQL. Build/ship steps: see
-  [`backend/README.md`](backend/README.md).
-- **Website** auto-deploys to GitHub Pages on push to `main`.
+All three runtimes deploy from `main` via GitHub Actions:
+
+| Component | Workflow | Target |
+|-----------|----------|--------|
+| **Website** | [`deploy.yml`](.github/workflows/deploy.yml) | GitHub Pages → kidgo.bryht.net |
+| **API** | [`deploy-backend.yml`](.github/workflows/deploy-backend.yml) | `systemd` `kidgo-api` at `/opt/kidgo`, behind nginx at `api.bryht.net/kid-go` |
+| **Bot** | [`deploy-bot.yml`](.github/workflows/deploy-bot.yml) | `systemd` `kidgo-bot` at `/opt/kidgo-bot` (same host) |
+
+The API workflow cross-builds a glibc binary in an Ubuntu 20.04 container (the box is
+too small to compile Rust) and scp's it over; the bot workflow rsyncs source and runs
+`npm ci` on the box, preserving the paired `auth/` session. Both run only when their
+own directory changes. Manual one-time setup (incl. pairing the WhatsApp number) is in
+[`backend/README.md`](backend/README.md) and [`bot/README.md`](bot/README.md).
+
+### CI secrets & variables
+Deploys reuse one SSH key for the shared host. Set these in the repo's
+**Settings → Secrets and variables → Actions**:
+
+| Secret | What |
+|--------|------|
+| `DEPLOY_SSH_KEY` | Private key whose public half is in the deploy user's `authorized_keys` |
+| `DEPLOY_SSH_HOST` | Server hostname (e.g. `bryht.net`) |
+| `DEPLOY_SSH_USER` | Deploy user — needs passwordless `sudo` for `install`/`systemctl restart` |
+
+| Variable (optional) | Default |
+|---------------------|---------|
+| `DEPLOY_SSH_PORT` | `22` |
+| `KIDGO_DEPLOY_PATH` | `/opt/kidgo` |
+| `KIDGO_BOT_PATH` | `/opt/kidgo-bot` |

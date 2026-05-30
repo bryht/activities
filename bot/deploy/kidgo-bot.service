@@ -1,0 +1,19 @@
+[Unit]
+Description=KidGo WhatsApp bot (Baileys)
+# The bot calls the local API, so start it after that's up.
+After=network.target kidgo-api.service
+Wants=kidgo-api.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/kidgo-bot
+EnvironmentFile=/opt/kidgo-bot/.env
+# Baileys + Node is the heaviest process on the box; cap the heap so it can't
+# starve the API/Postgres on the ~512MB host. See bot/README.md.
+ExecStart=/usr/bin/node --max-old-space-size=128 src/index.js
+Restart=on-failure
+RestartSec=5
+MemoryMax=220M
+
+[Install]
+WantedBy=multi-user.target

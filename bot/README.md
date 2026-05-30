@@ -25,3 +25,34 @@ it private. Re-pairing is only needed if the session is lost.
 
 Everything is driven through the REST API (`src/api.js`); the bot holds no business logic
 of its own beyond conversation state.
+
+## Deploy
+The bot runs as a `systemd` service (`/opt/kidgo-bot`) on the same host as the API. Pushes
+to `main` touching `bot/**` auto-deploy via
+[`.github/workflows/deploy-bot.yml`](../.github/workflows/deploy-bot.yml): it rsyncs the
+source, runs `npm ci` on the box, and restarts the service. The paired `auth/` session and
+the server `.env` are **never** overwritten by a deploy.
+
+### First-time server setup
+```sh
+# Node 20+ required (src/api.js uses global fetch).
+sudo mkdir -p /opt/kidgo-bot && sudo chown "$USER" /opt/kidgo-bot
+cat > /opt/kidgo-bot/.env <<'EOF'
+KIDGO_API_BASE=http://127.0.0.1:8090   # talk to the API directly, skip nginx/TLS
+KIDGO_AUTH_DIR=./auth
+LOG_LEVEL=silent
+EOF
+sudo cp deploy/kidgo-bot.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable kidgo-bot
+```
+
+### Pairing the WhatsApp number (manual, one-time)
+Scan the QR from the dedicated phone **before** starting the service — the saved `auth/`
+then survives every deploy:
+```sh
+cd /opt/kidgo-bot && npm ci --omit=dev
+node src/index.js              # scan the QR with the KidGo number, then Ctrl-C
+sudo systemctl start kidgo-bot
+```
+Re-run `node src/index.js` to re-pair if the session ever logs out.
+Logs: `journalctl -u kidgo-bot -f`.

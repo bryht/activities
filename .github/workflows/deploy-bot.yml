@@ -1,0 +1,60 @@
+name: Deploy Bot
+
+# Ships the WhatsApp bot (Node/Baileys) to the server. No build step — we rsync
+# the source and run `npm ci` on the box. The Baileys session in auth/ is NEVER
+# touched, so the manually-paired WhatsApp login survives every deploy.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'bot/**'
+      - '.github/workflows/deploy-bot.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-bot
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          SSH_PORT: ${{ vars.DEPLOY_SSH_PORT || '22' }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Rsync source & restart
+        env:
+          SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          SSH_PORT: ${{ vars.DEPLOY_SSH_PORT || '22' }}
+          DEPLOY_PATH: ${{ vars.KIDGO_BOT_PATH || '/opt/kidgo-bot' }}
+        run: |
+          # --delete keeps the server tree in sync, but the excludes below are
+          # preserved: auth/ (the paired session), the server .env, and the
+          # server-built node_modules. Trailing slash on bot/ copies contents.
+          rsync -az --delete \
+            --exclude 'node_modules/' \
+            --exclude 'auth/' \
+            --exclude '.env' \
+            -e "ssh -p $SSH_PORT -i ~/.ssh/id_deploy" \
+            bot/ "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/"
+
+          ssh -p "$SSH_PORT" -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" \
+            "cd '$DEPLOY_PATH' \
+             && npm ci --omit=dev \
+             && sudo systemctl restart kidgo-bot \
+             && sleep 2 && systemctl is-active kidgo-bot"
