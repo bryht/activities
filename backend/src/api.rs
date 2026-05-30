@@ -632,9 +632,11 @@ async fn user_activities(
     State(st): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<Vec<Activity>>> {
+    // Cancelled activities drop off the list (they're still reachable by a
+    // direct manage link, just not surfaced here).
     let sql = format!(
-        "{SELECT_ACTIVITY} WHERE a.host_id = $1 OR EXISTS \
-         (SELECT 1 FROM kidgo_participants pp WHERE pp.activity_id = a.id AND pp.user_id = $1) \
+        "{SELECT_ACTIVITY} WHERE a.status = 'open' AND (a.host_id = $1 OR EXISTS \
+         (SELECT 1 FROM kidgo_participants pp WHERE pp.activity_id = a.id AND pp.user_id = $1)) \
          ORDER BY a.starts_at"
     );
     let rows = sqlx::query_as::<_, ActivityRow>(&sql)
