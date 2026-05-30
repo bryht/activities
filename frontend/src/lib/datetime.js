@@ -29,3 +29,37 @@ export function isThisWeek(iso) {
   const diff = (new Date(new Date(iso).setHours(0, 0, 0, 0)) - today) / DAY
   return diff >= 0 && diff < 7
 }
+
+/** A stable local `YYYY-MM-DD` key for grouping activities by day. */
+export function ymdKey(date) {
+  const d = new Date(date)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+    d.getDate(),
+  ).padStart(2, '0')}`
+}
+
+/** True when both dates fall on the same calendar day (local time). */
+export function sameDay(a, b) {
+  return ymdKey(a) === ymdKey(b)
+}
+
+/**
+ * A 6×7 grid of Date objects covering the month containing `year`/`month`
+ * (month is 0-indexed), padded to whole weeks starting on Monday. Used to lay
+ * out the calendar month view.
+ */
+export function monthMatrix(year, month) {
+  const first = new Date(year, month, 1)
+  // JS getDay(): 0=Sun..6=Sat. Shift so Monday is column 0.
+  const lead = (first.getDay() + 6) % 7
+  const start = new Date(year, month, 1 - lead)
+  const weeks = []
+  for (let w = 0; w < 6; w++) {
+    const days = []
+    for (let d = 0; d < 7; d++) {
+      days.push(new Date(start.getFullYear(), start.getMonth(), start.getDate() + w * 7 + d))
+    }
+    weeks.push(days)
+  }
+  return weeks
+}
