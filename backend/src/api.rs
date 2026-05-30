@@ -511,8 +511,8 @@ mod tests {
             spot_area: "Centrum".into(),
             spot_type: "Outdoor / sandbox".into(),
             spot_ages: "All ages".into(),
-            spot_lat: Some(50.8447),
-            spot_lon: Some(5.6890),
+            spot_lat: Some(50.8452),
+            spot_lon: Some(5.6858),
             going: vec![],
         }
     }

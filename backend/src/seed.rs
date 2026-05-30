@@ -12,19 +12,20 @@ const GROUPS: &[(&str, &str, &str, &str, &str)] = &[
 ];
 
 /// Maastricht kid-friendly spots (PRD §7). `(id, name, area, type, ages, lat, lon)`.
-/// Coordinates are approximate (hand-placed around Maastricht, ~50.85 N, 5.69 E)
-/// and good enough to plot a recognisable pin on the map view.
+/// Coordinates are the venues' real locations (verified against each place's
+/// address). The three demo-only venues without a real-world address
+/// (stadtbibliotheek, playzone, dierenpark) are placed within their stated area.
 const SPOTS: &[(&str, &str, &str, &str, &str, f64, f64)] = &[
-    ("stadspark", "Stadspark", "Centrum", "Outdoor / sandbox", "All ages", 50.8447, 5.6890),
-    ("bonnefantenpark", "Bonnefantenpark", "Randwyck", "Outdoor / playground", "1–5", 50.8419, 5.7045),
-    ("stadtbibliotheek", "Stadtbibliotheek", "Centrum", "Indoor / picture books", "0–5", 50.8475, 5.6995),
-    ("geusseltbad", "Geusseltbad", "Noord", "Indoor pool", "6m+", 50.8592, 5.7144),
-    ("playzone", "Playzone Maastricht", "Noord", "Indoor play", "1–5", 50.8635, 5.6975),
-    ("dierenpark", "Dierenpark Maastricht", "Noord", "Zoo", "1–5", 50.8688, 5.7090),
-    ("frontenpark", "Frontenpark", "Centrum", "Outdoor walking", "All ages", 50.8558, 5.6852),
-    ("pietersberg", "Sint Pietersberg", "Zuid", "Outdoor / caves", "3+", 50.8347, 5.6862),
-    ("fortwillem", "Speeltuin Fort Willem", "West", "Outdoor / playground", "1–12", 50.8576, 5.6829),
-    ("centreceramique", "Centre Céramique", "Centrum", "Indoor / library", "0–8", 50.8456, 5.7029),
+    ("stadspark", "Stadspark", "Centrum", "Outdoor / sandbox", "All ages", 50.8452, 5.6858),
+    ("bonnefantenpark", "Bonnefantenpark", "Randwyck", "Outdoor / playground", "1–5", 50.8432, 5.7053),
+    ("stadtbibliotheek", "Stadtbibliotheek", "Centrum", "Indoor / picture books", "0–5", 50.8487, 5.6920),
+    ("geusseltbad", "Geusseltbad", "Noord", "Indoor pool", "6m+", 50.8589, 5.7165),
+    ("playzone", "Playzone Maastricht", "Noord", "Indoor play", "1–5", 50.8650, 5.6990),
+    ("dierenpark", "Dierenpark Maastricht", "Noord", "Zoo", "1–5", 50.8700, 5.7080),
+    ("frontenpark", "Frontenpark", "Centrum", "Outdoor walking", "All ages", 50.8585, 5.6878),
+    ("pietersberg", "Sint Pietersberg", "Zuid", "Outdoor / caves", "3+", 50.8268, 5.6874),
+    ("fortwillem", "Speeltuin Fort Willem", "West", "Outdoor / playground", "1–12", 50.8576, 5.6754),
+    ("centreceramique", "Centre Céramique", "Centrum", "Indoor / library", "0–8", 50.8469, 5.7048),
 ];
 
 /// A real, weekly community activity (PRD §4.1). Unlike user posts, these are
