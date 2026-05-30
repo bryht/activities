@@ -114,25 +114,31 @@ async function register(s, phone, msg, reply) {
     s.step = 'reg_stage'
     const gs = await groups()
     const list = gs.map((g, i) => `${i + 1}. ${g.emoji} ${g.name} (${g.range})`).join('\n')
-    await reply(`Nice to meet you, ${msg}! 🎉\n\nWhich stage is your child in?\n${list}`)
+    await reply(
+      `Nice to meet you, ${msg}! 🎉\n\nWhich stage(s) is your child in? You can pick more than one — reply with the numbers, e.g. *4* or *4,5*.\n${list}`,
+    )
     return
   }
-  // reg_stage
+  // reg_stage — accept one or several stages (e.g. "4,5"); the first is the
+  // child's primary stage, all of them become interests for matching/messages.
   const gs = await groups()
-  const pick = parsePick(msg, gs)
-  if (!pick) {
-    await reply('Please reply with the number of your child’s stage (e.g. 3).')
+  const picks = parsePicks(msg, gs)
+  if (!picks.length) {
+    await reply('Please reply with one or more stage numbers, e.g. *4* or *4,5*.')
     return
   }
+  const ids = picks.map((p) => p.id)
   const user = await api.upsertUser({
     nickname: s.data.nickname,
     phone,
-    childStage: pick.id,
-    interests: [pick.id],
+    childStage: ids[0],
+    interests: ids,
   })
   s.step = 'idle'
   s.data = {}
-  await reply(`All set, ${user.nickname}! 🍼 Your stage: ${pick.emoji} ${pick.name}.\n\n${MENU}`)
+  const label = picks.map((p) => `${p.emoji} ${p.name}`).join(', ')
+  const noun = picks.length > 1 ? 'stages' : 'stage'
+  await reply(`All set, ${user.nickname}! 🍼 Your ${noun}: ${label}.\n\n${MENU}`)
 }
 
 // ---- main menu ----
@@ -160,10 +166,12 @@ async function mainMenu(s, user, msg, lower, reply) {
   }
   if (lower === '4' || lower.startsWith('profile')) {
     const gs = await groups()
-    const g = gs.find((x) => x.id === user.childStage)
-    return reply(
-      `👤 *${user.nickname}*\n📍 ${user.city}\n🧒 Stage: ${g ? g.emoji + ' ' + g.name : '—'}\n\n${MENU}`,
-    )
+    // Show every stage the parent follows (interests); fall back to childStage.
+    const ids = user.interests?.length ? user.interests : [user.childStage].filter(Boolean)
+    const stages = ids.map((id) => gs.find((x) => x.id === id)).filter(Boolean)
+    const label = stages.length ? stages.map((g) => `${g.emoji} ${g.name}`).join(', ') : '—'
+    const noun = stages.length > 1 ? 'Stages' : 'Stage'
+    return reply(`👤 *${user.nickname}*\n📍 ${user.city}\n🧒 ${noun}: ${label}\n\n${MENU}`)
   }
   // Fall back to treating free text as an activity sentence.
   if (msg.length > 6) {
@@ -312,4 +320,19 @@ function parsePick(msg, list) {
   if (n >= 1 && n <= list.length) return list[n - 1]
   const lower = msg.toLowerCase()
   return list.find((g) => g.name.toLowerCase() === lower || g.id === lower) || null
+}
+
+// Parse one or several picks from a single reply, e.g. "4,5", "4 5", "4 and 5".
+// Returns the matched items in order, de-duplicated.
+function parsePicks(msg, list) {
+  const tokens = msg
+    .split(/[,\s]+/)
+    .map((t) => t.trim())
+    .filter((t) => t && t.toLowerCase() !== 'and')
+  const picked = []
+  for (const tok of tokens) {
+    const p = parsePick(tok, list)
+    if (p && !picked.includes(p)) picked.push(p)
+  }
+  return picked
 }
