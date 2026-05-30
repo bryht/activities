@@ -9,6 +9,7 @@ mod state;
 use std::time::Duration;
 
 use sqlx::postgres::PgPoolOptions;
+use sqlx::Executor;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
@@ -28,9 +29,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("DATABASE_URL must be set (postgres connection string)");
     let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8080);
 
+    // KidGo lives in its own `kid_go` schema. Pin search_path on every pooled
+    // connection so all unqualified queries resolve there regardless of the
+    // role's default (keeps local dev and the shared server consistent).
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .acquire_timeout(Duration::from_secs(10))
+        .after_connect(|conn, _meta| {
+            Box::pin(async move {
+                conn.execute("SET search_path TO kid_go, public").await?;
+                Ok(())
+            })
+        })
         .connect(&database_url)
         .await?;
 
