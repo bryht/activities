@@ -105,29 +105,37 @@ fn parse_time(t: &str) -> NaiveTime {
 
 /// Find the first clock-like token and return it as a 24h time.
 fn scan_clock(t: &str) -> Option<NaiveTime> {
-    let bytes: Vec<char> = t.chars().collect();
+    // Work entirely in char space: indices below are char positions, so they
+    // must never be used to slice the byte-indexed `&str` (that panics on any
+    // multi-byte character, e.g. CJK input).
+    let chars: Vec<char> = t.chars().collect();
+    let digits = |from: usize, to: usize| -> String { chars[from..to].iter().collect() };
     let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i].is_ascii_digit() {
+    while i < chars.len() {
+        if chars[i].is_ascii_digit() {
             let start = i;
-            while i < bytes.len() && bytes[i].is_ascii_digit() {
+            while i < chars.len() && chars[i].is_ascii_digit() {
                 i += 1;
             }
-            let mut hour: u32 = t[start..i].parse().ok()?;
+            // Ignore implausibly long runs rather than overflowing u32.
+            let mut hour: u32 = match digits(start, i).parse() {
+                Ok(h) => h,
+                Err(_) => continue,
+            };
             let mut minute = 0u32;
-            if i < bytes.len() && (bytes[i] == ':' || bytes[i] == '.') {
+            if i < chars.len() && (chars[i] == ':' || chars[i] == '.') {
                 let m0 = i + 1;
                 let mut j = m0;
-                while j < bytes.len() && bytes[j].is_ascii_digit() {
+                while j < chars.len() && chars[j].is_ascii_digit() {
                     j += 1;
                 }
                 if j > m0 {
-                    minute = t[m0..j].parse().unwrap_or(0);
+                    minute = digits(m0, j).parse().unwrap_or(0);
                     i = j;
                 }
             }
             // skip spaces, then look for am/pm
-            let rest: String = t[i..].trim_start().chars().take(2).collect();
+            let rest: String = chars[i..].iter().collect::<String>().trim_start().chars().take(2).collect();
             if rest == "pm" && hour < 12 {
                 hour += 12;
             } else if rest == "am" && hour == 12 {
@@ -307,5 +315,25 @@ fn extract_json(s: &str) -> Option<&str> {
         Some(&s[start..=end])
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Regression: a byte-index slice on multi-byte (CJK) input used to panic
+    // ("byte index N is not a char boundary"), dropping the API connection.
+    #[test]
+    fn scan_clock_handles_non_ascii_without_panicking() {
+        let s = "我明天想去maastricht 圣彼得堡山 野餐 12 点吧，帮我发个活动";
+        assert_eq!(scan_clock(s), NaiveTime::from_hms_opt(12, 0, 0));
+    }
+
+    #[test]
+    fn scan_clock_reads_common_formats() {
+        assert_eq!(scan_clock("meet at 14:30 today"), NaiveTime::from_hms_opt(14, 30, 0));
+        assert_eq!(scan_clock("2pm at the park"), NaiveTime::from_hms_opt(14, 0, 0));
+        assert_eq!(scan_clock("no time here"), None);
     }
 }
