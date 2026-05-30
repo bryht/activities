@@ -42,13 +42,27 @@ export default function Activities() {
   const [sort, setSort] = useState('date')
   const [view, setView] = useState(params.get('view') || 'list')
 
+  // Calendar view is desktop-only — it's cramped on a phone. Track the viewport
+  // so we can hide the toggle and fall back to the list on small screens.
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)') // matches Tailwind's < sm
+    const update = () => setIsMobile(mq.matches)
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
+
+  const availableViews = isMobile ? VIEWS.filter((v) => v.id !== 'calendar') : VIEWS
+  const effectiveView = isMobile && view === 'calendar' ? 'list' : view
+
   // keep the URL in sync so links like /activities?group=toddler&view=map stay shareable
   useEffect(() => {
     const next = {}
     if (group !== 'all') next.group = group
-    if (view !== 'list') next.view = view
+    if (effectiveView !== 'list') next.view = effectiveView
     setParams(next, { replace: true })
-  }, [group, view, setParams])
+  }, [group, effectiveView, setParams])
 
   // Filtering and sorting happen server-side via query params.
   const { data, loading, error } = useApi(
@@ -61,12 +75,12 @@ export default function Activities() {
       <div className="sticky top-[57px] z-10 space-y-3 border-b border-rose-100 bg-rose-50/80 px-4 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/80 sm:px-6">
         {/* View switcher: List / Map / Calendar */}
         <div className="flex gap-1 rounded-full bg-white p-1 ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700 sm:w-fit">
-          {VIEWS.map((v) => (
+          {availableViews.map((v) => (
             <button
               key={v.id}
               onClick={() => setView(v.id)}
               className={`flex-1 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition sm:flex-none ${
-                view === v.id
+                effectiveView === v.id
                   ? 'bg-brand-500 text-white'
                   : 'text-slate-600 hover:text-brand-600 dark:text-slate-300 dark:hover:text-brand-300'
               }`}
@@ -124,9 +138,9 @@ export default function Activities() {
             <p className="text-3xl">🔍</p>
             <p className="mt-2 text-sm">Couldn’t load activities.</p>
           </div>
-        ) : view === 'map' ? (
+        ) : effectiveView === 'map' ? (
           <ActivitiesMap activities={results} />
-        ) : view === 'calendar' ? (
+        ) : effectiveView === 'calendar' ? (
           <ActivitiesCalendar activities={results} />
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
