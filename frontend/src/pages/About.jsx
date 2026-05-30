@@ -1,6 +1,10 @@
+import { QRCodeSVG } from 'qrcode.react'
 import { useReference } from '../context/Reference'
 import WhatsAppButton from '../components/WhatsAppButton'
 import KidGoMark from '../components/KidGoMark'
+
+// WhatsApp contact QR — scanning it in the WhatsApp app adds the bot (PRD §4.1, §8).
+const BOT_QR_URL = import.meta.env.VITE_BOT_QR_URL || 'https://wa.me/qr/FVDNWYDE2CR2N1'
 
 export default function About() {
   const { groups, spots } = useReference()
@@ -18,10 +22,16 @@ export default function About() {
         <div className="mx-auto mt-5 max-w-xs">
           <WhatsAppButton label="Add the bot on WhatsApp" message="Hi KidGo! I'd like to join." />
         </div>
-        {/* QR placeholder — real build would render the bot's QR (PRD §4.1, §8) */}
-        <div className="mx-auto mt-4 grid h-32 w-32 place-items-center rounded-xl border-2 border-dashed border-brand-200 bg-white text-xs text-slate-400 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-500">
-          Scan QR to register
-        </div>
+        {/* Scan in the WhatsApp app to add the bot as a contact (PRD §4.1, §8). */}
+        <a
+          href={BOT_QR_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="mx-auto mt-4 block w-fit rounded-xl border-2 border-brand-200 bg-white p-3 dark:border-slate-600"
+        >
+          <QRCodeSVG value={BOT_QR_URL} size={128} level="M" className="h-32 w-32" />
+        </a>
+        <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">Scan in WhatsApp to register</p>
       </section>
 
       <section className="mt-6 md:mt-10">

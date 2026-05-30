@@ -26,6 +26,7 @@ jobs:
       # The site talks to the KidGo API behind the api.bryht.net reverse proxy.
       VITE_API_BASE: https://api.bryht.net/kid-go
       VITE_BOT_NUMBER: ${{ vars.KIDGO_BOT_NUMBER || '31600000000' }}
+      VITE_BOT_QR_URL: ${{ vars.KIDGO_BOT_QR_URL || 'https://wa.me/qr/FVDNWYDE2CR2N1' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
