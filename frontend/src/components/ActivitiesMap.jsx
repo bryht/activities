@@ -48,7 +48,7 @@ export default function ActivitiesMap({ activities }) {
 
   return (
     <div>
-      <div className="overflow-hidden rounded-2xl ring-1 ring-slate-200">
+      <div className="overflow-hidden rounded-2xl ring-1 ring-slate-200 dark:ring-slate-700">
         <MapContainer
           center={MAASTRICHT}
           zoom={13}
@@ -62,17 +62,17 @@ export default function ActivitiesMap({ activities }) {
           {pins.map(({ spot, items }) => (
             <Marker key={spot.id} position={[spot.lat, spot.lon]} icon={countIcon(items.length)}>
               <Popup>
-                <p className="text-sm font-bold text-slate-900">📍 {spot.name}</p>
-                <p className="mb-2 text-xs text-slate-500">{spot.area}</p>
+                <p className="text-sm font-bold text-slate-900 dark:text-slate-100">📍 {spot.name}</p>
+                <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">{spot.area}</p>
                 <ul className="space-y-1.5">
                   {items.map((a) => (
                     <li key={a.id}>
                       <Link
                         to={`/activities/${a.id}`}
-                        className="block rounded-lg px-1 py-0.5 text-sm text-brand-600 hover:bg-brand-50"
+                        className="block rounded-lg px-1 py-0.5 text-sm text-brand-600 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-500/15"
                       >
                         <span className="font-semibold">{a.title}</span>
-                        <span className="block text-xs text-slate-500">
+                        <span className="block text-xs text-slate-500 dark:text-slate-400">
                           {dayLabel(a.when)} · {timeLabel(a.when)}
                         </span>
                       </Link>
@@ -85,13 +85,13 @@ export default function ActivitiesMap({ activities }) {
         </MapContainer>
       </div>
       {hidden > 0 && (
-        <p className="mt-2 text-xs text-slate-400">
+        <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
           {hidden} {hidden === 1 ? 'activity is' : 'activities are'} at a spot without a map
           location and aren’t shown here.
         </p>
       )}
       {plotted === 0 && (
-        <p className="mt-3 text-center text-sm text-slate-400">
+        <p className="mt-3 text-center text-sm text-slate-400 dark:text-slate-500">
           No activities to place on the map for these filters.
         </p>
       )}

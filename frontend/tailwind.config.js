@@ -1,6 +1,8 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
+  // Follow the OS setting: `dark:` variants key off prefers-color-scheme.
+  darkMode: 'media',
   theme: {
     extend: {
       colors: {
