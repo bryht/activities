@@ -35,7 +35,8 @@ export default function ActivityDetail() {
     .filter((a) => a.id !== activity.id && (a.area === activity.area || a.group === activity.group))
     .slice(0, 2)
 
-  const joinMessage = `Hi KidGo! I'd like to join "${activity.title}" at ${spot?.name} (${dayLabel(activity.when)} ${timeLabel(activity.when)}).`
+  // The [ref:<id>] token lets the bot match the exact activity (PRD §3.B).
+  const joinMessage = `Hi KidGo! I'd like to join "${activity.title}" at ${spot?.name} (${dayLabel(activity.when)} ${timeLabel(activity.when)}). [ref:${activity.id}]`
 
   return (
     <div className="px-4 sm:px-6">

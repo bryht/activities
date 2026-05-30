@@ -21,6 +21,7 @@ export const api = {
   userByPhone: (phone) => req('GET', `/api/users/by-phone/${phone}`),
   upsertUser: (user) => req('POST', '/api/users', user),
   listActivities: (qs = '') => req('GET', `/api/activities${qs}`),
+  activity: (id) => req('GET', `/api/activities/${id}`),
   myActivities: (userId) => req('GET', `/api/users/${userId}/activities`),
   createActivity: (a) => req('POST', '/api/activities', a),
   join: (id, userId) => req('POST', `/api/activities/${id}/join`, { userId }),

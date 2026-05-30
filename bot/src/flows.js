@@ -69,6 +69,13 @@ export async function handleMessage(phone, text, reply) {
     return register(s, phone, msg, reply)
   }
 
+  // Website "I want to come" deep-link (PRD §3.B): the prefilled message carries
+  // a [ref:<activity-id>] token so we join the exact activity, no guessing.
+  const ref = msg.match(/\[ref:\s*([0-9a-f-]{36})\]/i)
+  if (ref) {
+    return joinByRef(s, user, ref[1], reply)
+  }
+
   switch (s.step) {
     case 'post_sentence':
       return postFromSentence(s, user, msg, reply)
@@ -230,6 +237,18 @@ async function browse(s, reply) {
       list.map((a, i) => fmtActivity(a, i)).join('\n\n') +
       '\n\nReply with a number to join.',
   )
+}
+
+async function joinByRef(s, user, activityId, reply) {
+  s.step = 'idle'
+  s.data = {}
+  const a = await api.activity(activityId)
+  if (!a) {
+    await reply("Hmm, I couldn't find that activity — it may have been removed. " + MENU)
+    return
+  }
+  await api.join(a.id, user.id)
+  await reply(`🎉 You're going to *${a.title}*!\n${fmtTime(a.when)} · ${a.spot.name}\n\nSee you there!`)
 }
 
 async function browsePick(s, user, msg, reply) {
