@@ -29,6 +29,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/links", post(create_links))
         .route("/api/links/:code", get(resolve_link))
         .route("/api/users", post(upsert_user))
+        .route("/api/me", get(get_me).patch(update_me))
         .route("/api/users/by-phone/:phone", get(user_by_phone))
         .route("/api/users/:id/activities", get(user_activities))
         .route("/api/nlu/parse", post(parse_sentence))
@@ -626,6 +627,77 @@ async fn user_by_phone(
     .await?
     .ok_or(AppError::NotFound)?;
     Ok(Json(user))
+}
+
+/// The profile of whoever holds the manage token. Powers the logged-in view on
+/// the website's About page.
+async fn get_me(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<AuthQuery>,
+) -> ApiResult<Json<User>> {
+    let uid = require_auth(&st, &headers, &q.token)?;
+    let user = fetch_user(&st.pool, uid).await?.ok_or(AppError::NotFound)?;
+    Ok(Json(user))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateMe {
+    nickname: Option<String>,
+    city: Option<String>,
+    /// Stage ids the parent follows. The first is also kept as the child's
+    /// primary `child_stage` (the default group when posting).
+    interests: Option<Vec<String>>,
+}
+
+async fn update_me(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<AuthQuery>,
+    Json(body): Json<UpdateMe>,
+) -> ApiResult<Json<User>> {
+    let uid = require_auth(&st, &headers, &q.token)?;
+
+    if matches!(body.nickname.as_deref(), Some(n) if n.trim().is_empty()) {
+        return Err(AppError::BadRequest("nickname can't be empty".into()));
+    }
+
+    let mut qb = QueryBuilder::new("UPDATE kidgo_users SET ");
+    let mut n = 0;
+    {
+        let mut set = qb.separated(", ");
+        if let Some(v) = body.nickname.as_ref() {
+            set.push("nickname = ").push_bind_unseparated(v.trim());
+            n += 1;
+        }
+        if let Some(v) = body.city.as_ref() {
+            set.push("city = ").push_bind_unseparated(v.trim());
+            n += 1;
+        }
+        if let Some(v) = body.interests.as_ref() {
+            set.push("interests = ").push_bind_unseparated(v);
+            set.push("child_stage = ").push_bind_unseparated(v.first().cloned());
+            n += 1;
+        }
+    }
+    if n > 0 {
+        qb.push(" WHERE id = ").push_bind(uid);
+        qb.build().execute(&st.pool).await?;
+    }
+
+    let user = fetch_user(&st.pool, uid).await?.ok_or(AppError::NotFound)?;
+    Ok(Json(user))
+}
+
+async fn fetch_user(pool: &PgPool, id: Uuid) -> Result<Option<User>, sqlx::Error> {
+    sqlx::query_as::<_, User>(
+        "SELECT id, nickname, phone, city, child_stage, interests, push_optout
+         FROM kidgo_users WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
 }
 
 async fn user_activities(
