@@ -22,14 +22,13 @@
 }
 
 /* Dark mode: tone down the OpenStreetMap tiles (markers/popups stay normal)
-   and give Leaflet's popup bubble a dark surface to match the rest of the UI. */
-@media (prefers-color-scheme: dark) {
-  .leaflet-tile {
-    filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9);
-  }
-  .leaflet-popup-content-wrapper,
-  .leaflet-popup-tip {
-    background: #1e293b; /* slate-800 */
-    color: #e2e8f0; /* slate-200 */
-  }
+   and give Leaflet's popup bubble a dark surface to match the rest of the UI.
+   Keyed off the `.dark` class so it follows the in-app theme override too. */
+.dark .leaflet-tile {
+  filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9);
+}
+.dark .leaflet-popup-content-wrapper,
+.dark .leaflet-popup-tip {
+  background: #1e293b; /* slate-800 */
+  color: #e2e8f0; /* slate-200 */
 }
