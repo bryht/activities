@@ -47,12 +47,31 @@ sudo systemctl daemon-reload && sudo systemctl enable kidgo-bot
 ```
 
 ### Pairing the WhatsApp number (manual, one-time)
-Scan the QR from the dedicated phone **before** starting the service — the saved `auth/`
-then survives every deploy:
+The bot prints a QR that the dedicated number must scan. Once scanned, the saved `auth/`
+session persists and survives every deploy — you only do this again if it logs out.
+
+**Option A — from your local machine (recommended).** The service is already running and
+the QR is in its journal; just tail the log over SSH and the QR renders in your own
+terminal, ready to scan:
+```sh
+ssh -p 27338 root@api.bryht.net "journalctl -u kidgo-bot -f"
+# Scan the QR shown in the terminal with the KidGo WhatsApp number.
+# It logs "✅ KidGo bot connected." once paired — then Ctrl-C to stop tailing.
+```
+If the QR has already scrolled away, refresh it first, then tail again:
+```sh
+ssh -p 27338 root@api.bryht.net "systemctl restart kidgo-bot && journalctl -u kidgo-bot -f"
+```
+The QR refreshes every ~20s, so don't worry if you catch it mid-rotation — wait for the
+next one.
+
+**Option B — on the server, before the service runs.** Run the bot in the foreground so the
+QR is interactive, then hand it to systemd:
 ```sh
 cd /opt/kidgo-bot && npm ci --omit=dev
 node src/index.js              # scan the QR with the KidGo number, then Ctrl-C
 sudo systemctl start kidgo-bot
 ```
-Re-run `node src/index.js` to re-pair if the session ever logs out.
-Logs: `journalctl -u kidgo-bot -f`.
+
+Re-run either option to re-pair if the session ever logs out. Live logs:
+`ssh -p 27338 root@api.bryht.net "journalctl -u kidgo-bot -f"`.
