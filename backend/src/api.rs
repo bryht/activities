@@ -23,6 +23,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/activities/:id", get(get_activity).patch(update_activity))
         .route("/api/activities/:id/calendar.ics", get(activity_calendar))
         .route("/api/activities/:id/join", post(join_activity))
+        .route("/api/activities/:id/leave", post(leave_activity))
         .route("/api/activities/:id/cancel", post(cancel_activity))
         .route("/api/activities/:id/messages", post(post_message))
         .route("/api/links", post(create_links))
@@ -315,6 +316,31 @@ async fn join_activity(
     let row = fetch_activity_row(&st.pool, id).await?.ok_or(AppError::NotFound)?;
     let messages = fetch_messages(&st.pool, id, Some(body.user_id)).await?;
     Ok(Json(row.into_activity(messages)))
+}
+
+/// Leave an activity you've joined. The host can't leave their own activity
+/// (that would orphan it) — they cancel it instead.
+async fn leave_activity(
+    State(st): State<AppState>,
+    Path(id): Path<Uuid>,
+    headers: HeaderMap,
+    Query(q): Query<AuthQuery>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let user_id = require_auth(&st, &headers, &q.token)?;
+    if host_id_of(&st.pool, id).await? == user_id {
+        return Err(AppError::Forbidden(
+            "you're the host — cancel the activity instead of leaving".into(),
+        ));
+    }
+    let result = sqlx::query("DELETE FROM kidgo_participants WHERE activity_id = $1 AND user_id = $2")
+        .bind(id)
+        .bind(user_id)
+        .execute(&st.pool)
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::Conflict("you're not on this activity".into()));
+    }
+    Ok(Json(json!({ "status": "left" })))
 }
 
 async fn post_message(

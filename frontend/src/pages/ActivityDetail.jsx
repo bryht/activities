@@ -146,6 +146,11 @@ export default function ActivityDetail() {
           {/* Owner manage panel — edit / cancel (PRD §4.4) */}
           {isOwner && !cancelled && <OwnerPanel activity={activity} onChange={setActivity} />}
 
+          {/* Participant panel — leave the activity */}
+          {role === 'participant' && !cancelled && (
+            <ParticipantPanel activity={activity} onLeft={() => navigate('/activities')} />
+          )}
+
           {/* Host */}
           <section>
             <div className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
@@ -252,6 +257,36 @@ function JoinedNote({ role }) {
   return (
     <div className="rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
       {role === 'owner' ? "✅ You're hosting this" : "✅ You're going"}
+    </div>
+  )
+}
+
+/** Participant control: leave an activity you've joined. */
+function ParticipantPanel({ activity, onLeft }) {
+  const [leaving, setLeaving] = useState(false)
+
+  async function leave() {
+    if (!window.confirm('Leave this activity? You can rejoin later from WhatsApp.')) return
+    setLeaving(true)
+    try {
+      await apiSend('POST', `/api/activities/${activity.id}/leave`)
+      onLeft()
+    } catch (e) {
+      window.alert(e.message)
+      setLeaving(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-between rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
+      <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">✅ You're going to this</p>
+      <button
+        onClick={leave}
+        disabled={leaving}
+        className="rounded-full bg-white px-3.5 py-1.5 text-sm font-semibold text-rose-600 shadow-sm ring-1 ring-slate-200 transition hover:bg-rose-50 disabled:opacity-60 dark:bg-slate-800 dark:text-rose-400 dark:ring-slate-600 dark:hover:bg-slate-700"
+      >
+        {leaving ? 'Leaving…' : '🚪 Leave'}
+      </button>
     </div>
   )
 }
