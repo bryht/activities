@@ -33,6 +33,7 @@ GET  /api/spots
 GET  /api/activities            ?group=&area=&tag=&date=today|week|all&sort=date|area
 POST /api/activities            { hostId, spotId, when, tags?, title?, group?, capacity?, notes? }
 GET  /api/activities/:id        ?userId=   (userId sets the `mine` flag on messages)
+GET  /api/activities/:id/calendar.ics       (text/calendar; add-to-calendar file)
 POST /api/activities/:id/join   { userId }
 POST /api/activities/:id/messages { userId, body }   (host/participants only — PRD §4.4)
 POST /api/users                 { nickname, phone, city?, childStage?, interests? }  (upsert by phone)

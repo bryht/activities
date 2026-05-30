@@ -44,11 +44,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .connect(&database_url)
         .await?;
 
-    // Schema is idempotent (IF NOT EXISTS) and prefixed `kidgo_`, so this is
-    // safe to run against a shared database on every boot.
-    sqlx::raw_sql(include_str!("../migrations/0001_kidgo_init.sql"))
-        .execute(&pool)
-        .await?;
+    // Apply every migration under `migrations/` in version order. sqlx tracks
+    // what's been applied in its own `_sqlx_migrations` table, so adding a new
+    // file is all it takes for it to run on the next boot — no more hand-wiring
+    // each migration here. The table lands in our `kid_go` schema (it's first
+    // in search_path), keeping everything isolated like the rest of the schema.
+    // Existing migrations are idempotent (IF NOT EXISTS), so applying them
+    // against a database first provisioned by the old raw_sql path is harmless.
+    sqlx::migrate!("./migrations").run(&pool).await?;
     seed::run(&pool).await?;
     tracing::info!("schema ready, reference data seeded");
 

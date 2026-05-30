@@ -1,6 +1,9 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
+  // Theme is controlled in-app (System/Light/Dark) by toggling `.dark` on
+  // <html>; see src/lib/theme.js. `class` lets users override the OS setting.
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
