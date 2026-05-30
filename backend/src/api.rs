@@ -1,6 +1,9 @@
 use axum::extract::{Path, Query, State};
+use axum::http::header;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
 use sqlx::{PgPool, QueryBuilder};
 use uuid::Uuid;
@@ -17,6 +20,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/spots", get(list_spots))
         .route("/api/activities", get(list_activities).post(create_activity))
         .route("/api/activities/:id", get(get_activity))
+        .route("/api/activities/:id/calendar.ics", get(activity_calendar))
         .route("/api/activities/:id/join", post(join_activity))
         .route("/api/activities/:id/messages", post(post_message))
         .route("/api/users", post(upsert_user))
@@ -128,6 +132,28 @@ async fn get_activity(
     let row = fetch_activity_row(&st.pool, id).await?.ok_or(AppError::NotFound)?;
     let messages = fetch_messages(&st.pool, id, v.user_id).await?;
     Ok(Json(row.into_activity(messages)))
+}
+
+/// Serve an activity as a downloadable `.ics` calendar file.
+///
+/// Served from a real URL with `Content-Type: text/calendar` and an *inline*
+/// disposition so iOS Safari opens the native "Add to Calendar" sheet instead
+/// of just saving the file (a `data:` URL + `download` attribute does not).
+async fn activity_calendar(
+    State(st): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Response> {
+    let row = fetch_activity_row(&st.pool, id).await?.ok_or(AppError::NotFound)?;
+    let body = build_ics(&row);
+    let filename = ics_filename(&row.title, &row.id);
+    let headers = [
+        (header::CONTENT_TYPE, "text/calendar; charset=utf-8".to_string()),
+        (
+            header::CONTENT_DISPOSITION,
+            format!("inline; filename=\"{filename}\""),
+        ),
+    ];
+    Ok((headers, body).into_response())
 }
 
 async fn create_activity(
@@ -371,6 +397,73 @@ async fn fetch_messages(
         .collect())
 }
 
+/// Default event length when an activity carries no explicit duration.
+const CALENDAR_DURATION_HOURS: i64 = 2;
+
+/// Build an RFC 5545 calendar file for one activity (single VEVENT).
+fn build_ics(row: &ActivityRow) -> String {
+    let start = row.starts_at;
+    let end = start + Duration::hours(CALENDAR_DURATION_HOURS);
+    let stamp = |dt: DateTime<Utc>| dt.format("%Y%m%dT%H%M%SZ").to_string();
+    let location = format!("{}, {}, Maastricht", row.spot_name, row.area);
+    let description = row
+        .notes
+        .clone()
+        .unwrap_or_else(|| format!("A KidGo activity at {}.", row.spot_name));
+
+    let mut lines = vec![
+        "BEGIN:VCALENDAR".to_string(),
+        "VERSION:2.0".to_string(),
+        "PRODID:-//KidGo//Activities//EN".to_string(),
+        "CALSCALE:GREGORIAN".to_string(),
+        "METHOD:PUBLISH".to_string(),
+        "BEGIN:VEVENT".to_string(),
+        format!("UID:{}@kidgo", row.id),
+        format!("DTSTAMP:{}", stamp(Utc::now())),
+        format!("DTSTART:{}", stamp(start)),
+        format!("DTEND:{}", stamp(end)),
+        format!("SUMMARY:{}", ics_escape(&format!("KidGo · {}", row.title))),
+        format!("LOCATION:{}", ics_escape(&location)),
+        format!("DESCRIPTION:{}", ics_escape(&description)),
+    ];
+    if row.recurring {
+        lines.push("RRULE:FREQ=WEEKLY".to_string());
+    }
+    lines.push("END:VEVENT".to_string());
+    lines.push("END:VCALENDAR".to_string());
+    // iCalendar requires CRLF line endings.
+    lines.join("\r\n")
+}
+
+/// Escape a text value per RFC 5545 (backslash, comma, semicolon, newline).
+fn ics_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace(';', "\\;")
+        .replace(',', "\\,")
+        .replace('\n', "\\n")
+}
+
+/// A filesystem-friendly download name, e.g. `kidgo-sandbox-afternoon.ics`.
+fn ics_filename(title: &str, id: &Uuid) -> String {
+    let mut slug = String::new();
+    let mut prev_dash = false;
+    for c in title.to_lowercase().chars() {
+        if c.is_ascii_alphanumeric() {
+            slug.push(c);
+            prev_dash = false;
+        } else if !prev_dash {
+            slug.push('-');
+            prev_dash = true;
+        }
+    }
+    let slug = slug.trim_matches('-');
+    if slug.is_empty() {
+        format!("kidgo-{id}.ics")
+    } else {
+        format!("kidgo-{slug}.ics")
+    }
+}
+
 fn default_title(tags: &[String], spot_name: &str) -> String {
     match tags.first() {
         Some(t) => format!("{} at {spot_name}", capitalize(t)),
@@ -389,4 +482,72 @@ fn capitalize(s: &str) -> String {
 /// Keep only digits — WhatsApp ids are bare E.164 without "+".
 fn normalize_phone(raw: &str) -> String {
     raw.chars().filter(|c| c.is_ascii_digit()).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_row(recurring: bool, notes: Option<&str>) -> ActivityRow {
+        ActivityRow {
+            id: Uuid::nil(),
+            title: "Weekly Wednesday sandbox".into(),
+            group_id: "toddler".into(),
+            spot_id: "stadspark".into(),
+            area: "Centrum".into(),
+            tags: vec!["sandbox".into()],
+            starts_at: DateTime::parse_from_rfc3339("2026-06-03T14:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            recurring,
+            capacity: 6,
+            notes: notes.map(Into::into),
+            host_id: Uuid::nil(),
+            host_name: "Amy".into(),
+            host_stage: Some("toddler".into()),
+            host_child_range: Some("12–24 months".into()),
+            spot_name: "Stadspark".into(),
+            spot_area: "Centrum".into(),
+            spot_type: "Outdoor / sandbox".into(),
+            spot_ages: "All ages".into(),
+            going: vec![],
+        }
+    }
+
+    #[test]
+    fn ics_has_event_with_two_hour_window_and_crlf() {
+        let ics = build_ics(&sample_row(false, Some("Bring a spade; meet by the oak, near entrance")));
+        assert!(ics.contains("BEGIN:VCALENDAR"));
+        assert!(ics.contains("BEGIN:VEVENT"));
+        assert!(ics.contains("DTSTART:20260603T140000Z"));
+        assert!(ics.contains("DTEND:20260603T160000Z"));
+        assert!(ics.contains("SUMMARY:KidGo · Weekly Wednesday sandbox"));
+        // RFC 5545 escaping of comma + semicolon in free text.
+        assert!(ics.contains("DESCRIPTION:Bring a spade\\; meet by the oak\\, near entrance"));
+        assert!(ics.contains("LOCATION:Stadspark\\, Centrum\\, Maastricht"));
+        assert!(ics.contains("\r\n"));
+        // A one-off activity must not carry a recurrence rule.
+        assert!(!ics.contains("RRULE"));
+    }
+
+    #[test]
+    fn recurring_activity_gets_weekly_rule() {
+        let ics = build_ics(&sample_row(true, None));
+        assert!(ics.contains("RRULE:FREQ=WEEKLY"));
+        // Falls back to a generated description when notes are absent.
+        assert!(ics.contains("DESCRIPTION:A KidGo activity at Stadspark."));
+    }
+
+    #[test]
+    fn filename_is_slugified_with_fallback() {
+        assert_eq!(
+            ics_filename("Weekly Wednesday sandbox", &Uuid::nil()),
+            "kidgo-weekly-wednesday-sandbox.ics"
+        );
+        // No alphanumerics → fall back to the id.
+        assert_eq!(
+            ics_filename("!!!", &Uuid::nil()),
+            format!("kidgo-{}.ics", Uuid::nil())
+        );
+    }
 }
