@@ -45,8 +45,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     // Schema is idempotent (IF NOT EXISTS) and prefixed `kidgo_`, so this is
-    // safe to run against a shared database on every boot.
+    // safe to run against a shared database on every boot. Migrations run in
+    // order; each is idempotent, so re-running them on every boot is harmless.
     sqlx::raw_sql(include_str!("../migrations/0001_kidgo_init.sql"))
+        .execute(&pool)
+        .await?;
+    sqlx::raw_sql(include_str!("../migrations/0002_spot_coords.sql"))
         .execute(&pool)
         .await?;
     seed::run(&pool).await?;
