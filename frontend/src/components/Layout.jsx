@@ -1,5 +1,6 @@
 import { NavLink, Link } from 'react-router-dom'
 import KidGoMark from './KidGoMark'
+import ThemeToggle from './ThemeToggle'
 
 const tabs = [
   { to: '/', label: 'Home', icon: '🏠', end: true },
@@ -42,7 +43,10 @@ export default function Layout({ children }) {
             ))}
           </nav>
 
-          <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-brand-600 dark:bg-brand-500/15 dark:text-brand-300">📍 Maastricht</span>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <span className="hidden rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-brand-600 dark:bg-brand-500/15 dark:text-brand-300 min-[400px]:inline-flex">📍 Maastricht</span>
+          </div>
         </div>
       </header>
 
