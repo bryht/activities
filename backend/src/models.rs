@@ -25,6 +25,10 @@ pub struct Spot {
     #[sqlx(rename = "type")]
     pub kind: String,
     pub ages: String,
+    /// Geographic coordinates for the map view. Nullable: a spot without
+    /// coordinates is omitted from the map but still listed everywhere else.
+    pub lat: Option<f64>,
+    pub lon: Option<f64>,
 }
 
 // ---------- Users ----------
@@ -112,6 +116,8 @@ pub struct ActivityRow {
     pub spot_area: String,
     pub spot_type: String,
     pub spot_ages: String,
+    pub spot_lat: Option<f64>,
+    pub spot_lon: Option<f64>,
     pub going: Vec<String>,
 }
 
@@ -128,6 +134,8 @@ impl ActivityRow {
                 area: self.spot_area,
                 kind: self.spot_type,
                 ages: self.spot_ages,
+                lat: self.spot_lat,
+                lon: self.spot_lon,
             },
             area: self.area,
             tags: self.tags,

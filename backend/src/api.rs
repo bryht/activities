@@ -37,6 +37,7 @@ SELECT a.id, a.title, a.group_id, a.spot_id, a.area, a.tags, a.starts_at, a.recu
        a.host_id AS host_id, h.nickname AS host_name, h.child_stage AS host_stage,
        hg.age_range AS host_child_range,
        s.name AS spot_name, s.area AS spot_area, s.type AS spot_type, s.ages AS spot_ages,
+       s.lat AS spot_lat, s.lon AS spot_lon,
        COALESCE((SELECT array_agg(u.nickname ORDER BY pp.joined_at)
                  FROM kidgo_participants pp JOIN kidgo_users u ON u.id = pp.user_id
                  WHERE pp.activity_id = a.id), ARRAY[]::text[]) AS going
@@ -63,7 +64,7 @@ async fn list_groups(State(st): State<AppState>) -> ApiResult<Json<Vec<Group>>> 
 
 async fn list_spots(State(st): State<AppState>) -> ApiResult<Json<Vec<Spot>>> {
     let spots = sqlx::query_as::<_, Spot>(
-        "SELECT id, name, area, type, ages FROM kidgo_spots ORDER BY name",
+        "SELECT id, name, area, type, ages, lat, lon FROM kidgo_spots ORDER BY name",
     )
     .fetch_all(&st.pool)
     .await?;
@@ -510,6 +511,8 @@ mod tests {
             spot_area: "Centrum".into(),
             spot_type: "Outdoor / sandbox".into(),
             spot_ages: "All ages".into(),
+            spot_lat: Some(50.8447),
+            spot_lon: Some(5.6890),
             going: vec![],
         }
     }

@@ -11,18 +11,20 @@ const GROUPS: &[(&str, &str, &str, &str, &str)] = &[
     ("creator", "🎨", "Creator", "3–5 years", "bg-rose-100 text-rose-700 ring-rose-200"),
 ];
 
-/// Maastricht kid-friendly spots (PRD §7). `(id, name, area, type, ages)`.
-const SPOTS: &[(&str, &str, &str, &str, &str)] = &[
-    ("stadspark", "Stadspark", "Centrum", "Outdoor / sandbox", "All ages"),
-    ("bonnefantenpark", "Bonnefantenpark", "Randwyck", "Outdoor / playground", "1–5"),
-    ("stadtbibliotheek", "Stadtbibliotheek", "Centrum", "Indoor / picture books", "0–5"),
-    ("geusseltbad", "Geusseltbad", "Noord", "Indoor pool", "6m+"),
-    ("playzone", "Playzone Maastricht", "Noord", "Indoor play", "1–5"),
-    ("dierenpark", "Dierenpark Maastricht", "Noord", "Zoo", "1–5"),
-    ("frontenpark", "Frontenpark", "Centrum", "Outdoor walking", "All ages"),
-    ("pietersberg", "Sint Pietersberg", "Zuid", "Outdoor / caves", "3+"),
-    ("fortwillem", "Speeltuin Fort Willem", "West", "Outdoor / playground", "1–12"),
-    ("centreceramique", "Centre Céramique", "Centrum", "Indoor / library", "0–8"),
+/// Maastricht kid-friendly spots (PRD §7). `(id, name, area, type, ages, lat, lon)`.
+/// Coordinates are approximate (hand-placed around Maastricht, ~50.85 N, 5.69 E)
+/// and good enough to plot a recognisable pin on the map view.
+const SPOTS: &[(&str, &str, &str, &str, &str, f64, f64)] = &[
+    ("stadspark", "Stadspark", "Centrum", "Outdoor / sandbox", "All ages", 50.8447, 5.6890),
+    ("bonnefantenpark", "Bonnefantenpark", "Randwyck", "Outdoor / playground", "1–5", 50.8419, 5.7045),
+    ("stadtbibliotheek", "Stadtbibliotheek", "Centrum", "Indoor / picture books", "0–5", 50.8475, 5.6995),
+    ("geusseltbad", "Geusseltbad", "Noord", "Indoor pool", "6m+", 50.8592, 5.7144),
+    ("playzone", "Playzone Maastricht", "Noord", "Indoor play", "1–5", 50.8635, 5.6975),
+    ("dierenpark", "Dierenpark Maastricht", "Noord", "Zoo", "1–5", 50.8688, 5.7090),
+    ("frontenpark", "Frontenpark", "Centrum", "Outdoor walking", "All ages", 50.8558, 5.6852),
+    ("pietersberg", "Sint Pietersberg", "Zuid", "Outdoor / caves", "3+", 50.8347, 5.6862),
+    ("fortwillem", "Speeltuin Fort Willem", "West", "Outdoor / playground", "1–12", 50.8576, 5.6829),
+    ("centreceramique", "Centre Céramique", "Centrum", "Indoor / library", "0–8", 50.8456, 5.7029),
 ];
 
 /// A real, weekly community activity (PRD §4.1). Unlike user posts, these are
@@ -145,18 +147,20 @@ pub async fn run(pool: &PgPool) -> Result<(), sqlx::Error> {
         .await?;
     }
 
-    for (id, name, area, ty, ages) in SPOTS {
+    for (id, name, area, ty, ages, lat, lon) in SPOTS {
         sqlx::query(
-            "INSERT INTO kidgo_spots (id, name, area, type, ages)
-             VALUES ($1,$2,$3,$4,$5)
+            "INSERT INTO kidgo_spots (id, name, area, type, ages, lat, lon)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)
              ON CONFLICT (id) DO UPDATE
-               SET name=$2, area=$3, type=$4, ages=$5",
+               SET name=$2, area=$3, type=$4, ages=$5, lat=$6, lon=$7",
         )
         .bind(id)
         .bind(name)
         .bind(area)
         .bind(ty)
         .bind(ages)
+        .bind(lat)
+        .bind(lon)
         .execute(pool)
         .await?;
     }
