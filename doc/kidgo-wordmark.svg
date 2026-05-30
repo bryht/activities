@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 200" width="700" height="200" role="img" aria-label="KidGo">
+  <defs>
+    <linearGradient id="kgw-tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0"    stop-color="#FF8A5C"/>
+      <stop offset="0.55" stop-color="#FB6A78"/>
+      <stop offset="1"    stop-color="#E11D48"/>
+    </linearGradient>
+    <linearGradient id="kgw-go" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FB6A78"/>
+      <stop offset="1" stop-color="#E11D48"/>
+    </linearGradient>
+    <filter id="kgw-shadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#7a1330" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+  <!-- mark -->
+  <g transform="translate(8 10) scale(0.3477)">
+    <rect width="512" height="512" rx="116" fill="url(#kgw-tile)"/>
+    <g fill="#FFD45E">
+      <path d="M392 96 c5 22 9 26 31 31 -22 5 -26 9 -31 31 -5 -22 -9 -26 -31 -31 22 -5 26 -9 31 -31 z"/>
+      <path d="M428 168 c3 13 5 15 18 18 -13 3 -15 5 -18 18 -3 -13 -5 -15 -18 -18 13 -3 15 -5 18 -18 z"/>
+    </g>
+    <g transform="translate(256 188)">
+      <path d="M0 248 L103.8 56.1 A118 118 0 1 0 -103.8 56.1 Z" fill="#FFFFFF" filter="url(#kgw-shadow)"/>
+      <circle cx="-66" cy="26" r="16" fill="#FFB3A7" opacity="0.9"/>
+      <circle cx="66"  cy="26" r="16" fill="#FFB3A7" opacity="0.9"/>
+      <g fill="#2B2440"><circle cx="-38" cy="-20" r="17"/><circle cx="38" cy="-20" r="17"/></g>
+      <g fill="#FFFFFF"><circle cx="-44" cy="-28" r="6"/><circle cx="32" cy="-28" r="6"/></g>
+      <path d="M-34 18 Q0 62 34 18" fill="none" stroke="#2B2440" stroke-width="14" stroke-linecap="round"/>
+    </g>
+  </g>
+
+  <!-- wordmark -->
+  <text x="205" y="133" font-family="'Nunito','ui-rounded','Segoe UI',system-ui,sans-serif"
+        font-weight="800" font-size="128" letter-spacing="-3">
+    <tspan fill="#2B2440">Kid</tspan><tspan fill="url(#kgw-go)">Go</tspan>
+  </text>
+</svg>

@@ -3,6 +3,7 @@ import { ACTIVITIES } from '../data/activities'
 import { GROUPS } from '../data/groups'
 import ActivityCard from '../components/ActivityCard'
 import WhatsAppButton from '../components/WhatsAppButton'
+import KidGoMark from '../components/KidGoMark'
 
 export default function Home() {
   const upcoming = [...ACTIVITIES].sort((a, b) => new Date(a.when) - new Date(b.when)).slice(0, 3)
@@ -11,8 +12,9 @@ export default function Home() {
     <div>
       {/* Hero */}
       <section className="bg-gradient-to-b from-brand-100 to-rose-50/40 px-4 pb-6 pt-8 text-center">
+        <KidGoMark className="mx-auto mb-4 h-20 w-20 drop-shadow-sm" />
         <h1 className="text-2xl font-extrabold leading-tight text-slate-900">
-          Find playmates for your little one 🧸
+          Find playmates for your little one
         </h1>
         <p className="mx-auto mt-2 max-w-xs text-sm text-slate-600">
           Post “I want to go play” in one sentence — KidGo matches families nearby, at a similar time, in the same stage.

@@ -1,4 +1,5 @@
 import { NavLink, Link } from 'react-router-dom'
+import KidGoMark from './KidGoMark'
 
 const tabs = [
   { to: '/', label: 'Home', icon: '🏠', end: true },
@@ -12,8 +13,11 @@ export default function Layout({ children }) {
       {/* Top bar */}
       <header className="sticky top-0 z-20 flex items-center justify-between border-b border-rose-100 bg-white/90 px-4 py-3 backdrop-blur">
         <Link to="/" className="flex items-center gap-2">
-          <span className="text-2xl">🧸</span>
-          <span className="text-xl font-extrabold tracking-tight text-brand-600">KidGo</span>
+          <KidGoMark className="h-8 w-8" />
+          <span className="text-xl font-extrabold tracking-tight">
+            <span className="text-slate-800">Kid</span>
+            <span className="text-brand-600">Go</span>
+          </span>
         </Link>
         <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-brand-600">📍 Maastricht</span>
       </header>

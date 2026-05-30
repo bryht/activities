@@ -1,13 +1,17 @@
 import { GROUPS } from '../data/groups'
 import { SPOTS } from '../data/spots'
 import WhatsAppButton from '../components/WhatsAppButton'
+import KidGoMark from '../components/KidGoMark'
 
 export default function About() {
   return (
     <div className="px-4 py-6">
       <section className="rounded-2xl bg-gradient-to-b from-brand-100 to-white p-6 text-center shadow-sm ring-1 ring-slate-100">
-        <span className="text-4xl">🧸</span>
-        <h1 className="mt-2 text-2xl font-extrabold text-slate-900">KidGo</h1>
+        <KidGoMark className="mx-auto h-20 w-20 drop-shadow-sm" />
+        <h1 className="mt-3 text-2xl font-extrabold tracking-tight">
+          <span className="text-slate-800">Kid</span>
+          <span className="text-brand-600">Go</span>
+        </h1>
         <p className="mt-2 text-sm text-slate-600">
           Help parents find playmates and activities for same-age kids in Maastricht.
         </p>

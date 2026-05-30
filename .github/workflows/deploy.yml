@@ -18,19 +18,24 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # The website prototype lives in design/
+    defaults:
+      run:
+        working-directory: design
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: design/package-lock.json
       - run: npm ci
       - run: npm run build
       # SPA fallback: serve index.html for unknown deep-link paths
       - run: cp dist/index.html dist/404.html
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: design/dist
 
   deploy:
     needs: build
