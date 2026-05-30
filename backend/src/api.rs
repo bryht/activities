@@ -25,7 +25,6 @@ pub fn router(state: AppState) -> Router {
         .route("/api/activities/:id/join", post(join_activity))
         .route("/api/activities/:id/cancel", post(cancel_activity))
         .route("/api/activities/:id/messages", post(post_message))
-        .route("/api/auth/link-token", post(create_link_token))
         .route("/api/links", post(create_links))
         .route("/api/links/:code", get(resolve_link))
         .route("/api/users", post(upsert_user))
@@ -348,29 +347,6 @@ async fn post_message(
 
     let messages = fetch_messages(&st.pool, id, Some(user_id)).await?;
     Ok(Json(messages))
-}
-
-/// Mint a one-hour manage link token for a user. Called by the bot when it
-/// lists "My activities" so each activity link carries `?token=…`.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LinkTokenBody {
-    user_id: Uuid,
-}
-
-async fn create_link_token(
-    State(st): State<AppState>,
-    Json(body): Json<LinkTokenBody>,
-) -> ApiResult<Json<serde_json::Value>> {
-    let exists: Option<Uuid> = sqlx::query_scalar("SELECT id FROM kidgo_users WHERE id = $1")
-        .bind(body.user_id)
-        .fetch_optional(&st.pool)
-        .await?;
-    if exists.is_none() {
-        return Err(AppError::NotFound);
-    }
-    let (token, expires_at) = auth::mint(&st.link_secret, body.user_id);
-    Ok(Json(json!({ "token": token, "expiresAt": expires_at })))
 }
 
 /// Unambiguous base32 alphabet (digits 2-9 + A-Z without I/O) for short codes.
