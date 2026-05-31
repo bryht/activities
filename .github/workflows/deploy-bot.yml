@@ -1,8 +1,9 @@
 name: Deploy Bot
 
 # Ships the Telegram bot (Node/grammY) to the server. No build step — we rsync
-# the source and run `npm ci` on the box. The server .env (which holds the
-# TELEGRAM_BOT_TOKEN) is NEVER touched, so the bot keeps working across deploys.
+# the source and run `npm ci` on the box. The server .env is preserved by rsync;
+# the TELEGRAM_BOT_TOKEN secret (if set) is upserted into it on each deploy, so
+# other hand-managed keys (KIDGO_API_BASE, …) stay intact.
 on:
   push:
     branches: [main]
@@ -42,15 +43,33 @@ jobs:
           SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
           SSH_PORT: ${{ vars.DEPLOY_SSH_PORT || '22' }}
           DEPLOY_PATH: ${{ vars.KIDGO_BOT_PATH || '/opt/kidgo-bot' }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
           # --delete keeps the server tree in sync, but the excludes below are
-          # preserved: the server .env (holds TELEGRAM_BOT_TOKEN) and the
-          # server-built node_modules. Trailing slash on bot/ copies contents.
+          # preserved: the server .env and the server-built node_modules.
+          # Trailing slash on bot/ copies contents.
           rsync -az --delete \
             --exclude 'node_modules/' \
             --exclude '.env' \
             -e "ssh -p $SSH_PORT -i ~/.ssh/id_deploy" \
             bot/ "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/"
+
+          # Upsert the bot token into the server .env. The value is piped over
+          # stdin (never on a command line, so it can't leak via the remote
+          # process list; GitHub also masks it in logs). Skipped when the secret
+          # is unset, so a missing secret can't blank a token set by hand.
+          if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
+            printf '%s' "$TELEGRAM_BOT_TOKEN" | ssh -p "$SSH_PORT" -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" \
+              "cd '$DEPLOY_PATH' \
+               && tok=\$(cat) \
+               && touch .env \
+               && { grep -v '^TELEGRAM_BOT_TOKEN=' .env > .env.tmp || true; } \
+               && printf 'TELEGRAM_BOT_TOKEN=%s\n' \"\$tok\" >> .env.tmp \
+               && mv .env.tmp .env \
+               && chmod 600 .env"
+          else
+            echo "TELEGRAM_BOT_TOKEN secret not set — leaving server .env untouched."
+          fi
 
           ssh -p "$SSH_PORT" -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" \
             "cd '$DEPLOY_PATH' \

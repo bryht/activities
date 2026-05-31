@@ -69,9 +69,12 @@ Deploys reuse one SSH key for the shared host. Set these in the repo's
 | `DEPLOY_SSH_KEY` | Private key whose public half is in the deploy user's `authorized_keys` |
 | `DEPLOY_SSH_HOST` | Server hostname (e.g. `bryht.net`) |
 | `DEPLOY_SSH_USER` | Deploy user — needs passwordless `sudo` for `install`/`systemctl restart` |
+| `TELEGRAM_BOT_TOKEN` | BotFather token; upserted into the bot's server `.env` on each deploy |
 
 | Variable (optional) | Default |
 |---------------------|---------|
 | `DEPLOY_SSH_PORT` | `22` |
 | `KIDGO_DEPLOY_PATH` | `/opt/kidgo` |
 | `KIDGO_BOT_PATH` | `/opt/kidgo-bot` |
+| `KIDGO_BOT_USERNAME` | `kidgo_bot` (website deep links → `t.me/<username>`) |
+| `KIDGO_BOT_LINK` | `https://t.me/kidgo_bot` (About-page QR) |

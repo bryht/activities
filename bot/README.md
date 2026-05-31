@@ -35,18 +35,25 @@ The bot runs as a `systemd` service (`/opt/kidgo-bot`) on the same host as the
 API. Pushes to `main` touching `bot/**` auto-deploy via
 [`.github/workflows/deploy-bot.yml`](../.github/workflows/deploy-bot.yml): it
 rsyncs the source, runs `npm ci` on the box, and restarts the service. The
-server `.env` (which holds `TELEGRAM_BOT_TOKEN`) is **never** overwritten by a
-deploy.
+server `.env` is preserved by rsync; the deploy upserts `TELEGRAM_BOT_TOKEN`
+from the GitHub Actions secret of the same name (if set), leaving any other
+hand-managed keys like `KIDGO_API_BASE` intact.
+
+The token is supplied as a repo secret — add **`TELEGRAM_BOT_TOKEN`** under
+*Settings → Secrets and variables → Actions* and the next deploy writes it to
+the server `.env`. (You can also set it on the server by hand; the deploy only
+overwrites it when the secret is present.)
 
 ### First-time server setup
 ```sh
 # Node 20+ required (src/api.js uses global fetch).
 sudo mkdir -p /opt/kidgo-bot && sudo chown "$USER" /opt/kidgo-bot
 cat > /opt/kidgo-bot/.env <<'EOF'
-TELEGRAM_BOT_TOKEN=123456:your-botfather-token
 KIDGO_API_BASE=http://127.0.0.1:8090   # talk to the API directly, skip nginx/TLS
 LOG_LEVEL=silent
 EOF
+# TELEGRAM_BOT_TOKEN comes from the GitHub Actions secret on deploy (or add it
+# here by hand for a first manual run).
 sudo cp deploy/kidgo-bot.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now kidgo-bot
 ```
