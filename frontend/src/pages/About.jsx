@@ -3,12 +3,12 @@ import { QRCodeSVG } from "qrcode.react";
 import { useReference } from "../context/Reference";
 import { useApi, apiSend } from "../lib/api";
 import { getToken } from "../lib/session";
-import WhatsAppButton from "../components/WhatsAppButton";
+import TelegramButton from "../components/TelegramButton";
 import KidGoMark from "../components/KidGoMark";
 
-// WhatsApp contact QR — scanning it in the WhatsApp app adds the bot (PRD §4.1, §8).
-const BOT_QR_URL =
-  import.meta.env.VITE_BOT_QR_URL || "https://wa.me/qr/FVDNWYDE2CR2N1";
+// Telegram bot link — scanning the QR (or tapping it) opens the bot (PRD §4.1, §8).
+const BOT_LINK =
+  import.meta.env.VITE_BOT_LINK || "https://t.me/kidgo_bot";
 
 export default function About() {
   const { groups, spots } = useReference();
@@ -41,20 +41,17 @@ export default function About() {
         {!loggedIn && (
           <>
             <div className="mx-auto mt-5 max-w-xs">
-              <WhatsAppButton
-                label="Add the bot on WhatsApp"
-                message="Hi KidGo! I'd like to join."
-              />
+              <TelegramButton label="Add the bot on Telegram" />
             </div>
-            {/* Scan in the WhatsApp app to add the bot as a contact (PRD §4.1, §8). */}
+            {/* Scan in the Telegram app to open the bot (PRD §4.1, §8). */}
             <a
-              href={BOT_QR_URL}
+              href={BOT_LINK}
               target="_blank"
               rel="noreferrer"
               className="mx-auto mt-4 block w-fit rounded-xl border-2 border-brand-200 bg-white p-3 dark:border-slate-600"
             >
               <QRCodeSVG
-                value={BOT_QR_URL}
+                value={BOT_LINK}
                 size={128}
                 level="M"
                 className="h-32 w-32"

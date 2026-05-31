@@ -2,8 +2,8 @@
 // Hybrid model: numbered quick-replies for menus + natural language for posting.
 import { api } from './api.js'
 
-// Per-user conversation state, keyed by phone. In-memory is fine for the pilot;
-// move to Redis/DB when we run multiple bot instances.
+// Per-user conversation state, keyed by the platform user id. In-memory is fine
+// for the pilot; move to Redis/DB when we run multiple bot instances.
 const sessions = new Map()
 const session = (phone) => {
   if (!sessions.has(phone)) sessions.set(phone, { step: 'idle', data: {} })
@@ -45,7 +45,7 @@ function fmtActivity(a, i) {
 
 /**
  * Handle one inbound text message.
- * @param {string} phone  digits-only WhatsApp id
+ * @param {string} phone  platform user id (e.g. Telegram numeric user id)
  * @param {string} text   message body
  * @param {(t:string)=>Promise<void>} reply
  */

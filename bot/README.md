@@ -1,37 +1,48 @@
 # bot
 
-KidGo WhatsApp bot (PRD §5.1) — **Baileys** (Node.js), the main entry point.
+KidGo Telegram bot (PRD §5.1) — **grammY** (Node.js), the main entry point.
 
-Connects directly to the WhatsApp WebSocket protocol (no headless browser, ~50–120MB).
-Hybrid interaction: natural-language posting + numbered quick-reply menus.
-
-> ⚠️ Baileys is unofficial and violates WhatsApp's ToS — use a dedicated number and plan
-> to migrate to the official Business API (Meta Cloud / 360dialog) as we scale.
+Talks to Telegram's official Bot API over **long polling** (no public webhook,
+no QR pairing, no ban risk). Hybrid interaction: natural-language posting +
+numbered quick-reply menus. The conversation logic in `src/flows.js` is
+transport-agnostic — it only needs `(identity, text, reply)` — so the user's
+Telegram numeric id is the identity, stored by the API in its `phone` field.
 
 ## Run
 ```sh
 npm install
-cp .env.example .env          # set KIDGO_API_BASE (e.g. https://api.bryht.net/kid-go)
-npm start                     # prints a QR — scan it with the dedicated KidGo number
+cp .env.example .env           # set TELEGRAM_BOT_TOKEN and KIDGO_API_BASE
+npm start                      # connects via long polling
 ```
-Auth/session is persisted under `KIDGO_AUTH_DIR` (default `./auth`); back it up and keep
-it private. Re-pairing is only needed if the session is lost.
+Create a bot with [@BotFather](https://t.me/BotFather) (`/newbot`), copy the
+token into `TELEGRAM_BOT_TOKEN`, and note the bot's username — the website's
+`VITE_BOT_USERNAME` must match it so the deep links resolve.
 
 ## Flows (`src/flows.js`)
-- **Registration** (PRD §4.1) — new contact → nickname → developmental stage → `POST /users`.
-- **Post** (Scenario A) — free-text sentence → `/nlu/parse` → confirm → `POST /activities`.
+- **Registration** (PRD §4.1) — new user → nickname → developmental stage → `POST /users`.
+- **Post** (Scenario A) — free-text sentence → `/nlu/post-fill` → confirm → `POST /activities`.
 - **Browse / join** (Scenario B/D) — numbered list → reply a number → `POST /activities/:id/join`.
 - **My activities / profile** — menu options.
 
-Everything is driven through the REST API (`src/api.js`); the bot holds no business logic
-of its own beyond conversation state.
+Website deep links arrive via Telegram's `/start <payload>` mechanism
+(`t.me/<bot>?start=ref_<id>` / `?start=manage_<id>`); `src/index.js` translates
+the payload into the `[ref:…]` / `[manage:…]` tokens the flows already parse.
+Everything else is driven through the REST API (`src/api.js`); the bot holds no
+business logic of its own beyond conversation state.
 
 ## Deploy
-The bot runs as a `systemd` service (`/opt/kidgo-bot`) on the same host as the API. Pushes
-to `main` touching `bot/**` auto-deploy via
-[`.github/workflows/deploy-bot.yml`](../.github/workflows/deploy-bot.yml): it rsyncs the
-source, runs `npm ci` on the box, and restarts the service. The paired `auth/` session and
-the server `.env` are **never** overwritten by a deploy.
+The bot runs as a `systemd` service (`/opt/kidgo-bot`) on the same host as the
+API. Pushes to `main` touching `bot/**` auto-deploy via
+[`.github/workflows/deploy-bot.yml`](../.github/workflows/deploy-bot.yml): it
+rsyncs the source, runs `npm ci` on the box, and restarts the service. The
+server `.env` is preserved by rsync; the deploy upserts `TELEGRAM_BOT_TOKEN`
+from the GitHub Actions secret of the same name (if set), leaving any other
+hand-managed keys like `KIDGO_API_BASE` intact.
+
+The token is supplied as a repo secret — add **`TELEGRAM_BOT_TOKEN`** under
+*Settings → Secrets and variables → Actions* and the next deploy writes it to
+the server `.env`. (You can also set it on the server by hand; the deploy only
+overwrites it when the secret is present.)
 
 ### First-time server setup
 ```sh
@@ -39,39 +50,14 @@ the server `.env` are **never** overwritten by a deploy.
 sudo mkdir -p /opt/kidgo-bot && sudo chown "$USER" /opt/kidgo-bot
 cat > /opt/kidgo-bot/.env <<'EOF'
 KIDGO_API_BASE=http://127.0.0.1:8090   # talk to the API directly, skip nginx/TLS
-KIDGO_AUTH_DIR=./auth
 LOG_LEVEL=silent
 EOF
+# TELEGRAM_BOT_TOKEN comes from the GitHub Actions secret on deploy (or add it
+# here by hand for a first manual run).
 sudo cp deploy/kidgo-bot.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable kidgo-bot
+sudo systemctl daemon-reload && sudo systemctl enable --now kidgo-bot
 ```
 
-### Pairing the WhatsApp number (manual, one-time)
-The bot prints a QR that the dedicated number must scan. Once scanned, the saved `auth/`
-session persists and survives every deploy — you only do this again if it logs out.
-
-**Option A — from your local machine (recommended).** The service is already running and
-the QR is in its journal; just tail the log over SSH and the QR renders in your own
-terminal, ready to scan:
-```sh
-ssh -p 27338 root@api.bryht.net "journalctl -u kidgo-bot -f"
-# Scan the QR shown in the terminal with the KidGo WhatsApp number.
-# It logs "✅ KidGo bot connected." once paired — then Ctrl-C to stop tailing.
-```
-If the QR has already scrolled away, refresh it first, then tail again:
-```sh
-ssh -p 27338 root@api.bryht.net "systemctl restart kidgo-bot && journalctl -u kidgo-bot -f"
-```
-The QR refreshes every ~20s, so don't worry if you catch it mid-rotation — wait for the
-next one.
-
-**Option B — on the server, before the service runs.** Run the bot in the foreground so the
-QR is interactive, then hand it to systemd:
-```sh
-cd /opt/kidgo-bot && npm ci --omit=dev
-node src/index.js              # scan the QR with the KidGo number, then Ctrl-C
-sudo systemctl start kidgo-bot
-```
-
-Re-run either option to re-pair if the session ever logs out. Live logs:
-`ssh -p 27338 root@api.bryht.net "journalctl -u kidgo-bot -f"`.
+No pairing step is needed — the bot authenticates with the token alone. Live
+logs: `ssh -p 27338 root@api.bryht.net "journalctl -u kidgo-bot -f"` (look for
+`✅ KidGo bot connected.`).

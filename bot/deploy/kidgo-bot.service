@@ -1,5 +1,5 @@
 [Unit]
-Description=KidGo WhatsApp bot (Baileys)
+Description=KidGo Telegram bot (grammY)
 # The bot calls the local API, so start it after that's up.
 After=network.target kidgo-api.service
 Wants=kidgo-api.service
@@ -8,11 +8,10 @@ Wants=kidgo-api.service
 Type=simple
 WorkingDirectory=/opt/kidgo-bot
 EnvironmentFile=/opt/kidgo-bot/.env
-# Baileys + Node is the heaviest process on the box; cap the heap so it can't
-# starve the API/Postgres on the ~512MB host. See bot/README.md.
+# Cap the heap so the bot can't starve the API/Postgres on the ~512MB host.
+# grammY is lightweight (long polling, no browser); 128MB is plenty.
 ExecStart=/usr/bin/node --max-old-space-size=128 src/index.js
-# Always restart — the bot now re-pairs on logout instead of exiting, but this
-# covers hard crashes too so it's never left silently dead.
+# Always restart so a hard crash never leaves the bot silently dead.
 Restart=always
 RestartSec=5
 MemoryMax=220M
