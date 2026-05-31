@@ -47,6 +47,14 @@ jobs:
           # upsert it into the server's .env so links survive restarts. Leave the
           # secret unset to manage the value by hand on the box instead.
           LINK_SECRET: ${{ secrets.KIDGO_LINK_SECRET }}
+          # AI gateway for image (vision) & voice-note (audio) understanding.
+          # Only the key is secret; base URL + models are plain defaults (override
+          # via repo variables). When the key is set, we upsert the six
+          # KIDGO_VISION_*/KIDGO_AUDIO_* lines on deploy.
+          AI_KEY: ${{ secrets.KIDGO_AI_GATEWAY_KEY }}
+          AI_BASE: ${{ vars.KIDGO_AI_BASE_URL || 'https://opencode.ai/zen/go/v1/chat/completions' }}
+          VISION_MODEL: ${{ vars.KIDGO_VISION_MODEL || 'qwen3.6-plus' }}
+          AUDIO_MODEL: ${{ vars.KIDGO_AUDIO_MODEL || 'mimo-v2-omni' }}
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
@@ -68,9 +76,27 @@ jobs:
             ENV_UPDATE="true"
           fi
 
+          # Upsert the vision/audio provider config when the gateway key is set —
+          # replacing only the KIDGO_VISION_*/KIDGO_AUDIO_* lines.
+          if [ -n "$AI_KEY" ]; then
+            AI_UPDATE="sudo touch '$DEPLOY_PATH/.env' \
+              && sudo sed -i '/^KIDGO_VISION_/d; /^KIDGO_AUDIO_/d' '$DEPLOY_PATH/.env' \
+              && printf '%s\n' \
+                 'KIDGO_VISION_BASE_URL=$AI_BASE' \
+                 'KIDGO_VISION_API_KEY=$AI_KEY' \
+                 'KIDGO_VISION_MODEL=$VISION_MODEL' \
+                 'KIDGO_AUDIO_BASE_URL=$AI_BASE' \
+                 'KIDGO_AUDIO_API_KEY=$AI_KEY' \
+                 'KIDGO_AUDIO_MODEL=$AUDIO_MODEL' | sudo tee -a '$DEPLOY_PATH/.env' >/dev/null \
+              && sudo chmod 600 '$DEPLOY_PATH/.env'"
+          else
+            AI_UPDATE="true"
+          fi
+
           ssh -p "$SSH_PORT" -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" \
             "sudo install -o root -g root -m 755 /tmp/kidgo-api.new '$DEPLOY_PATH/kidgo-api' \
              && rm -f /tmp/kidgo-api.new \
              && $ENV_UPDATE \
+             && $AI_UPDATE \
              && sudo systemctl restart kidgo-api \
              && sleep 2 && systemctl is-active kidgo-api"

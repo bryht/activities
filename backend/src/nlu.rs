@@ -7,8 +7,8 @@
 use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate, NaiveTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::error::{anyhow_lite, ApiResult};
-use crate::state::AppState;
+use crate::error::{anyhow_lite, ApiResult, AppError};
+use crate::state::{AppState, ProviderConfig};
 
 /// Maastricht local offset (CEST). Fixed for the summer pilot — swap for a
 /// real tz database (chrono-tz) when we support multiple cities/seasons.
@@ -292,21 +292,17 @@ fn extract_json(s: &str) -> Option<&str> {
 
 // ---------- shared LLM call ----------
 
-/// One chat-completion round-trip. Returns the assistant's raw text.
-async fn chat(state: &AppState, system: &str, user: &str) -> ApiResult<String> {
-    let base = state.llm.api_base_url.as_ref().unwrap();
-    let key = state.llm.api_key.as_ref().unwrap();
+/// One chat-completion round-trip to a given provider. `messages` is the raw
+/// OpenAI-style array, so callers can embed images/audio as content parts.
+async fn chat_messages(provider: &ProviderConfig, messages: serde_json::Value) -> ApiResult<String> {
     let payload = serde_json::json!({
-        "model": state.llm.model,
+        "model": provider.model,
         "temperature": 0,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ]
+        "messages": messages,
     });
     let resp = reqwest::Client::new()
-        .post(base)
-        .bearer_auth(key)
+        .post(&provider.base_url)
+        .bearer_auth(&provider.api_key)
         .json(&payload)
         .send()
         .await
@@ -320,12 +316,70 @@ async fn chat(state: &AppState, system: &str, user: &str) -> ApiResult<String> {
     Ok(content.to_string())
 }
 
+/// Plain system+user text turn against the configured chat provider.
+async fn chat(state: &AppState, system: &str, user: &str) -> ApiResult<String> {
+    let provider = state.llm.chat.as_ref().expect("chat provider checked by caller");
+    chat_messages(
+        provider,
+        serde_json::json!([
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]),
+    )
+    .await
+}
+
 /// As `chat`, but extract the first `{...}` JSON block from the reply.
 async fn chat_json(state: &AppState, system: &str, user: &str) -> ApiResult<String> {
     let content = chat(state, system, user).await?;
     let slice = extract_json(&content)
         .ok_or_else(|| anyhow_lite::Error("no JSON in LLM reply".into()))?;
     Ok(slice.to_string())
+}
+
+// ---------- media understanding (images & voice notes) ----------
+
+/// Describe an image (likely a flyer/photo) as a one-line activity sentence the
+/// rest of the pipeline can route and slot-fill.
+pub async fn understand_image(state: &AppState, data_b64: &str, mime: &str) -> ApiResult<String> {
+    let provider = state
+        .llm
+        .vision
+        .as_ref()
+        .ok_or_else(|| AppError::BadRequest("image understanding is not configured".into()))?;
+    let prompt = "This image was sent to a kids' playdate bot — likely a flyer or photo of a \
+        children's activity. In ONE short sentence, describe the activity including day, time and \
+        place if visible (e.g. \"Toddler music class Saturday 10am at Centre Céramique\"). \
+        If it isn't about an activity, briefly say what it shows.";
+    let messages = serde_json::json!([{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": format!("data:{mime};base64,{data_b64}")}}
+        ]
+    }]);
+    chat_messages(provider, messages).await
+}
+
+/// Transcribe a voice note to text (in English) for the normal flow.
+pub async fn transcribe_audio(state: &AppState, data_b64: &str, mime: &str) -> ApiResult<String> {
+    let provider = state
+        .llm
+        .audio
+        .as_ref()
+        .ok_or_else(|| AppError::BadRequest("audio understanding is not configured".into()))?;
+    // "audio/ogg; codecs=opus" -> "ogg"; the model wants a bare container name.
+    let format = mime.rsplit('/').next().unwrap_or("ogg").split(';').next().unwrap_or("ogg").trim();
+    let prompt = "This is a voice note from a parent talking to a kids' playdate bot. Write out, \
+        in English text, exactly what they said. Return only their message, nothing else.";
+    let messages = serde_json::json!([{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": prompt},
+            {"type": "input_audio", "input_audio": {"data": data_b64, "format": format}}
+        ]
+    }]);
+    chat_messages(provider, messages).await
 }
 
 // ---------- intent routing ----------

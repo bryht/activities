@@ -35,6 +35,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/nlu/parse", post(parse_sentence))
         .route("/api/nlu/intent", post(classify_intent))
         .route("/api/nlu/post-fill", post(post_fill))
+        .route("/api/nlu/media", post(process_media))
         .with_state(state)
 }
 
@@ -809,6 +810,30 @@ async fn post_fill(
 ) -> ApiResult<Json<nlu::FillResult>> {
     let result = nlu::post_fill(&st, body.draft, &body.message).await?;
     Ok(Json(result))
+}
+
+#[derive(Deserialize)]
+struct MediaBody {
+    /// "image" or "audio".
+    kind: String,
+    /// Base64-encoded media bytes.
+    data: String,
+    mime: Option<String>,
+}
+
+/// Turn an image (vision model) or voice note (audio model) into text the bot
+/// can run through the normal flow.
+async fn process_media(
+    State(st): State<AppState>,
+    Json(body): Json<MediaBody>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let mime = body.mime.as_deref().unwrap_or("application/octet-stream");
+    let text = match body.kind.as_str() {
+        "image" => nlu::understand_image(&st, &body.data, mime).await?,
+        "audio" => nlu::transcribe_audio(&st, &body.data, mime).await?,
+        other => return Err(AppError::BadRequest(format!("unsupported media kind: {other}"))),
+    };
+    Ok(Json(json!({ "text": text })))
 }
 
 // ---------- helpers ----------

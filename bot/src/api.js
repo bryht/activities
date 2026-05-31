@@ -28,4 +28,5 @@ export const api = {
   createLinks: (userId, activityIds) => req('POST', '/api/links', { userId, activityIds }),
   intent: (text) => req('POST', '/api/nlu/intent', { text }),
   postFill: (draft, message) => req('POST', '/api/nlu/post-fill', { draft, message }),
+  media: (kind, data, mime) => req('POST', '/api/nlu/media', { kind, data, mime }),
 }

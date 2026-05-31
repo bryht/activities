@@ -11,6 +11,7 @@ mod state;
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::extract::DefaultBodyLimit;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Executor;
 use tower_http::catch_panic::CatchPanicLayer;
@@ -85,6 +86,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     .layer(cors)
     .layer(TraceLayer::new_for_http())
+    // Base64-encoded images/voice notes exceed Axum's 2 MB default body limit.
+    .layer(DefaultBodyLimit::max(16 * 1024 * 1024))
     // Outermost: turn any handler panic into a 500 instead of dropping the
     // connection, so one malformed message can't break a request silently.
     .layer(CatchPanicLayer::new());

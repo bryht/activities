@@ -6,11 +6,13 @@ import {
   default as makeWASocket,
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
+  downloadMediaMessage,
   DisconnectReason,
 } from '@whiskeysockets/baileys'
 import pino from 'pino'
 import qrcode from 'qrcode-terminal'
 import { handleMessage } from './flows.js'
+import { api } from './api.js'
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'silent' })
 const AUTH_DIR = process.env.KIDGO_AUTH_DIR || './auth'
@@ -44,17 +46,28 @@ async function start() {
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return
     for (const m of messages) {
+      const jid = m.key.remoteJid
       try {
         if (!m.message || m.key.fromMe) continue
-        const jid = m.key.remoteJid
         if (!jid || jid.endsWith('@g.us') || jid === 'status@broadcast') continue // 1:1 only
 
-        const text =
-          m.message.conversation ||
-          m.message.extendedTextMessage?.text ||
-          m.message.buttonsResponseMessage?.selectedDisplayText ||
-          m.message.listResponseMessage?.title ||
+        const message = m.message
+        const image = message.imageMessage
+        const audio = message.audioMessage
+
+        let text =
+          message.conversation ||
+          message.extendedTextMessage?.text ||
+          message.buttonsResponseMessage?.selectedDisplayText ||
+          message.listResponseMessage?.title ||
+          image?.caption ||
           ''
+
+        // A captionless image or a voice note: understand it via the API's
+        // vision/audio model, then run the resulting text through the flow.
+        if (!text.trim() && (image || audio)) {
+          text = await understandMedia(sock, m, image ? 'image' : 'audio', image || audio, jid)
+        }
         if (!text.trim()) continue
 
         await sock.sendPresenceUpdate('composing', jid)
@@ -64,7 +77,7 @@ async function start() {
       } catch (err) {
         console.error('handler error:', err)
         try {
-          await sock.sendMessage(m.key.remoteJid, {
+          await sock.sendMessage(jid, {
             text: 'Oops, something went wrong. Type *menu* to start over.',
           })
         } catch {
@@ -73,6 +86,31 @@ async function start() {
       }
     }
   })
+}
+
+// Download a media message and turn it into text via the API's vision/audio
+// model. Returns '' (and sends a friendly nudge) if anything goes wrong.
+async function understandMedia(sock, m, kind, node, jid) {
+  await sock.sendPresenceUpdate('composing', jid)
+  try {
+    const buffer = await downloadMediaMessage(
+      m,
+      'buffer',
+      {},
+      { logger, reuploadRequest: sock.updateMediaMessage },
+    )
+    const mime = node?.mimetype || (kind === 'image' ? 'image/jpeg' : 'audio/ogg')
+    const { text } = await api.media(kind, buffer.toString('base64'), mime)
+    return (text || '').trim()
+  } catch (err) {
+    console.error('media error:', err)
+    const note =
+      kind === 'image'
+        ? "I couldn't read that image — could you type the details instead?"
+        : "I couldn't understand that voice note — could you type it instead?"
+    await sock.sendMessage(jid, { text: note }).catch(() => {})
+    return ''
+  }
 }
 
 start().catch((e) => {
