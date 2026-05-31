@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { resolveLink } from '../lib/api'
 import { saveToken } from '../lib/session'
-import WhatsAppButton from '../components/WhatsAppButton'
+import TelegramButton from '../components/TelegramButton'
 
 // Landing page for a short manage link (/m/<code>). It exchanges the code for a
 // session token, stores it, and redirects to the activity. Expired / unknown
@@ -44,10 +44,10 @@ export default function ManageLink() {
         title="This link has expired"
         body="Manage links last one hour. Tap below and the KidGo bot will send you a fresh one for this activity."
       >
-        <WhatsAppButton
+        <TelegramButton
           full={false}
           label="Get a fresh link 🔑"
-          message={`Hi KidGo! My manage link expired — can I get a fresh one? [manage:${state.activityId}]`}
+          payload={`manage_${state.activityId}`}
         />
       </Card>
     )
@@ -60,10 +60,10 @@ export default function ManageLink() {
       title="This link isn't valid"
       body="It may have been mistyped or already replaced. Ask the KidGo bot for your activities to get working links."
     >
-      <WhatsAppButton
+      <TelegramButton
         full={false}
         label="Open KidGo 💬"
-        message="Hi KidGo! Show me my activities."
+        payload="mine"
       />
       <Link to="/activities" className="mt-3 inline-block text-sm font-semibold text-brand-600 dark:text-brand-400">
         ← Browse activities

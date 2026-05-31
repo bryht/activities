@@ -5,7 +5,7 @@ import { getExpiredToken } from '../lib/session'
 import { dayLabel, timeLabel } from '../lib/datetime'
 import { mapsUrl, calendarUrl } from '../lib/links'
 import GroupBadge from '../components/GroupBadge'
-import WhatsAppButton from '../components/WhatsAppButton'
+import TelegramButton from '../components/TelegramButton'
 
 export default function ActivityDetail() {
   const { id } = useParams()
@@ -44,9 +44,6 @@ export default function ActivityDetail() {
   const joined = role === 'owner' || role === 'participant'
   const cancelled = activity.status === 'cancelled'
 
-  // The [ref:<id>] token lets the bot match the exact activity (PRD §3.B).
-  const joinMessage = `Hi KidGo! I'd like to join "${activity.title}" at ${spot?.name} (${dayLabel(activity.when)} ${timeLabel(activity.when)}). [ref:${activity.id}]`
-
   return (
     <div className="px-4 sm:px-6">
       <div className="flex items-center gap-2 py-3">
@@ -72,10 +69,10 @@ export default function ActivityDetail() {
             Tap below and the KidGo bot will send you a fresh one for this activity.
           </p>
           <div className="mt-3">
-            <WhatsAppButton
+            <TelegramButton
               full={false}
               label="Get a fresh link 🔑"
-              message={`Hi KidGo! My manage link for "${activity.title}" expired — can I get a fresh one? [manage:${activity.id}]`}
+              payload={`manage_${activity.id}`}
             />
           </div>
         </div>
@@ -198,7 +195,7 @@ export default function ActivityDetail() {
               {joined ? (
                 <MessageComposer activity={activity} onChange={setActivity} />
               ) : (
-                <p className="pt-1 text-xs text-slate-400 dark:text-slate-500">Join in WhatsApp to leave a message.</p>
+                <p className="pt-1 text-xs text-slate-400 dark:text-slate-500">Join in Telegram to leave a message.</p>
               )}
             </div>
           </section>
@@ -212,7 +209,7 @@ export default function ActivityDetail() {
               <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
                 <span className="font-semibold text-slate-700 dark:text-slate-200">{activity.going.length} of {activity.capacity}</span> families going
               </p>
-              {joined ? <JoinedNote role={role} /> : <WhatsAppButton label="I want to come 🙋" message={joinMessage} />}
+              {joined ? <JoinedNote role={role} /> : <TelegramButton label="I want to come 🙋" payload={`ref_${activity.id}`} />}
             </div>
           </div>
         </aside>
@@ -223,7 +220,7 @@ export default function ActivityDetail() {
         <>
           <div className="h-20 lg:hidden" aria-hidden="true" />
           <div className="fixed inset-x-0 bottom-[57px] z-10 mx-auto max-w-2xl border-t border-rose-100 bg-white/95 p-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 md:bottom-0 lg:hidden">
-            <WhatsAppButton label="I want to come 🙋" message={joinMessage} />
+            <TelegramButton label="I want to come 🙋" payload={`ref_${activity.id}`} />
           </div>
         </>
       )}
@@ -245,7 +242,7 @@ function ParticipantPanel({ activity, onLeft }) {
   const [leaving, setLeaving] = useState(false)
 
   async function leave() {
-    if (!window.confirm('Leave this activity? You can rejoin later from WhatsApp.')) return
+    if (!window.confirm('Leave this activity? You can rejoin later from Telegram.')) return
     setLeaving(true)
     try {
       await apiSend('POST', `/api/activities/${activity.id}/leave`)

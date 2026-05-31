@@ -1,8 +1,8 @@
 name: Deploy Bot
 
-# Ships the WhatsApp bot (Node/Baileys) to the server. No build step — we rsync
-# the source and run `npm ci` on the box. The Baileys session in auth/ is NEVER
-# touched, so the manually-paired WhatsApp login survives every deploy.
+# Ships the Telegram bot (Node/grammY) to the server. No build step — we rsync
+# the source and run `npm ci` on the box. The server .env (which holds the
+# TELEGRAM_BOT_TOKEN) is NEVER touched, so the bot keeps working across deploys.
 on:
   push:
     branches: [main]
@@ -44,11 +44,10 @@ jobs:
           DEPLOY_PATH: ${{ vars.KIDGO_BOT_PATH || '/opt/kidgo-bot' }}
         run: |
           # --delete keeps the server tree in sync, but the excludes below are
-          # preserved: auth/ (the paired session), the server .env, and the
+          # preserved: the server .env (holds TELEGRAM_BOT_TOKEN) and the
           # server-built node_modules. Trailing slash on bot/ copies contents.
           rsync -az --delete \
             --exclude 'node_modules/' \
-            --exclude 'auth/' \
             --exclude '.env' \
             -e "ssh -p $SSH_PORT -i ~/.ssh/id_deploy" \
             bot/ "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/"

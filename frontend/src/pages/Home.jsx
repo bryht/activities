@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { useApi, activitiesQuery } from '../lib/api'
 import { useReference } from '../context/Reference'
 import ActivityCard from '../components/ActivityCard'
-import WhatsAppButton from '../components/WhatsAppButton'
+import TelegramButton from '../components/TelegramButton'
 import KidGoMark from '../components/KidGoMark'
 
 export default function Home() {
@@ -23,7 +23,7 @@ export default function Home() {
         </p>
         <div className="mx-auto mt-5 flex max-w-xs flex-col gap-2 sm:mt-7 sm:max-w-md sm:flex-row sm:justify-center">
           <div className="sm:flex-1">
-            <WhatsAppButton label="Post an activity" message="Hi KidGo! I'd like to post an activity." />
+            <TelegramButton label="Post an activity" payload="post" />
           </div>
           <Link
             to="/activities"
