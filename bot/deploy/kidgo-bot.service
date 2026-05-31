@@ -11,7 +11,9 @@ EnvironmentFile=/opt/kidgo-bot/.env
 # Baileys + Node is the heaviest process on the box; cap the heap so it can't
 # starve the API/Postgres on the ~512MB host. See bot/README.md.
 ExecStart=/usr/bin/node --max-old-space-size=128 src/index.js
-Restart=on-failure
+# Always restart — the bot now re-pairs on logout instead of exiting, but this
+# covers hard crashes too so it's never left silently dead.
+Restart=always
 RestartSec=5
 MemoryMax=220M
 

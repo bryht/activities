@@ -9,6 +9,7 @@ import {
   downloadMediaMessage,
   DisconnectReason,
 } from '@whiskeysockets/baileys'
+import { rm } from 'node:fs/promises'
 import pino from 'pino'
 import qrcode from 'qrcode-terminal'
 import { handleMessage } from './flows.js'
@@ -28,7 +29,7 @@ async function start() {
 
   sock.ev.on('creds.update', saveCreds)
 
-  sock.ev.on('connection.update', (u) => {
+  sock.ev.on('connection.update', async (u) => {
     const { connection, lastDisconnect, qr } = u
     if (qr) {
       console.log('\n📱 Scan this QR with the KidGo WhatsApp number:\n')
@@ -38,8 +39,20 @@ async function start() {
     if (connection === 'close') {
       const code = lastDisconnect?.error?.output?.statusCode
       const loggedOut = code === DisconnectReason.loggedOut
-      console.log(`Connection closed (code ${code}).`, loggedOut ? 'Logged out.' : 'Reconnecting…')
-      if (!loggedOut) start()
+      if (loggedOut) {
+        // WhatsApp invalidated the session. Drop the dead credentials so the
+        // next start prints a fresh QR to re-pair — never sit silently dead.
+        console.log(`Connection closed (code ${code}). Logged out — clearing session, scan the new QR to re-pair.`)
+        await rm(AUTH_DIR, { recursive: true, force: true }).catch(() => {})
+      } else {
+        console.log(`Connection closed (code ${code}). Reconnecting…`)
+      }
+      // Always come back up (re-pair on logout, reconnect otherwise). Exit
+      // non-zero only if re-init itself fails, so systemd restarts us.
+      start().catch((e) => {
+        console.error('restart failed:', e)
+        process.exit(1)
+      })
     }
   })
 
