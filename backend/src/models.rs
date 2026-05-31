@@ -179,7 +179,13 @@ pub struct CreateActivity {
     pub host_id: Uuid,
     pub title: Option<String>,
     pub group: Option<String>,
-    pub spot_id: String,
+    /// A known library spot id. Optional — a free-text `location` may be given
+    /// instead, which is geocoded into a custom spot.
+    #[serde(default)]
+    pub spot_id: Option<String>,
+    /// Free-text place name for a custom (non-library) location.
+    #[serde(default)]
+    pub location: Option<String>,
     pub tags: Option<Vec<String>>,
     pub when: DateTime<Utc>,
     pub recurring: Option<bool>,

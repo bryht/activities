@@ -7,7 +7,7 @@
 use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate, NaiveTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::error::ApiResult;
+use crate::error::{anyhow_lite, ApiResult};
 use crate::state::AppState;
 
 /// Maastricht local offset (CEST). Fixed for the summer pilot — swap for a
@@ -251,37 +251,9 @@ async fn llm_parse(
          \"tags\":[\"sandbox\"],\"title\":\"short title\"}}. Use the nearest future date for weekdays."
     );
 
-    let base = state.llm.api_base_url.as_ref().unwrap();
-    let key = state.llm.api_key.as_ref().unwrap();
-    let payload = serde_json::json!({
-        "model": state.llm.model,
-        "temperature": 0,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": text}
-        ]
-    });
-
-    let client = reqwest::Client::new();
-    let resp = client
-        .post(base)
-        .bearer_auth(key)
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| crate::error::anyhow_lite::Error::from(e))?
-        .error_for_status()
-        .map_err(|e| crate::error::anyhow_lite::Error::from(e))?;
-    let body: serde_json::Value =
-        resp.json().await.map_err(crate::error::anyhow_lite::Error::from)?;
-
-    let content = body["choices"][0]["message"]["content"]
-        .as_str()
-        .ok_or_else(|| crate::error::anyhow_lite::Error("no LLM content".into()))?;
-    let json_slice = extract_json(content)
-        .ok_or_else(|| crate::error::anyhow_lite::Error("no JSON in LLM reply".into()))?;
+    let json_slice = chat_json(state, &system, text).await?;
     let fields: LlmFields =
-        serde_json::from_str(json_slice).map_err(crate::error::anyhow_lite::Error::from)?;
+        serde_json::from_str(&json_slice).map_err(anyhow_lite::Error::from)?;
 
     // Combine date+time; fall back to the rule parser for anything missing.
     let rules = rule_parse(text, spots);
@@ -316,6 +288,239 @@ fn extract_json(s: &str) -> Option<&str> {
     } else {
         None
     }
+}
+
+// ---------- shared LLM call ----------
+
+/// One chat-completion round-trip. Returns the assistant's raw text.
+async fn chat(state: &AppState, system: &str, user: &str) -> ApiResult<String> {
+    let base = state.llm.api_base_url.as_ref().unwrap();
+    let key = state.llm.api_key.as_ref().unwrap();
+    let payload = serde_json::json!({
+        "model": state.llm.model,
+        "temperature": 0,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+    });
+    let resp = reqwest::Client::new()
+        .post(base)
+        .bearer_auth(key)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(anyhow_lite::Error::from)?
+        .error_for_status()
+        .map_err(anyhow_lite::Error::from)?;
+    let body: serde_json::Value = resp.json().await.map_err(anyhow_lite::Error::from)?;
+    let content = body["choices"][0]["message"]["content"]
+        .as_str()
+        .ok_or_else(|| anyhow_lite::Error("no LLM content".into()))?;
+    Ok(content.to_string())
+}
+
+/// As `chat`, but extract the first `{...}` JSON block from the reply.
+async fn chat_json(state: &AppState, system: &str, user: &str) -> ApiResult<String> {
+    let content = chat(state, system, user).await?;
+    let slice = extract_json(&content)
+        .ok_or_else(|| anyhow_lite::Error("no JSON in LLM reply".into()))?;
+    Ok(slice.to_string())
+}
+
+// ---------- intent routing ----------
+
+const INTENTS: [&str; 5] = ["post", "browse", "mine", "profile", "help"];
+
+/// Route a free-form message to one of the bot's flows (LLM, rules as fallback).
+pub async fn classify_intent(state: &AppState, text: &str) -> ApiResult<String> {
+    if state.llm.enabled() {
+        match llm_intent(state, text).await {
+            Ok(i) => return Ok(i),
+            Err(e) => tracing::warn!("LLM intent failed, using rules: {e:?}"),
+        }
+    }
+    Ok(rule_intent(text))
+}
+
+fn rule_intent(text: &str) -> String {
+    let t = text.to_lowercase();
+    let has = |words: &[&str]| words.iter().any(|w| t.contains(w));
+    if has(&["post", "create", "host", "organi", "playdate", "meet up", "meetup"]) {
+        "post".into()
+    } else if has(&["browse", "find", "what's on", "whats on", "see activ", "near me"]) {
+        "browse".into()
+    } else if has(&["my activ", "manage", "mine", "my event", "my post"]) {
+        "mine".into()
+    } else if has(&["profile", "my stage", "account", "settings"]) {
+        "profile".into()
+    } else {
+        "help".into()
+    }
+}
+
+async fn llm_intent(state: &AppState, text: &str) -> ApiResult<String> {
+    let system = "Classify a parent's WhatsApp message to a kids' playdate bot into ONE intent. \
+        Intents: post = wants to create/host/organise a new activity or playdate; \
+        browse = wants to find or see existing activities; \
+        mine = wants to see or manage their own activities; \
+        profile = wants to see or change their account or child's stages; \
+        help = greeting, menu, unclear, or anything else. \
+        Reply ONLY compact JSON: {\"intent\":\"post|browse|mine|profile|help\"}.";
+    let slice = chat_json(state, system, text).await?;
+    let v: serde_json::Value = serde_json::from_str(&slice).map_err(anyhow_lite::Error::from)?;
+    let intent = v["intent"].as_str().unwrap_or("help").to_string();
+    Ok(if INTENTS.contains(&intent.as_str()) { intent } else { "help".into() })
+}
+
+// ---------- "create activity" slot filling ----------
+
+/// The running draft of an activity being assembled over several messages. The
+/// place is either a known `spot_id` or a free-text `location` (custom place).
+#[derive(Serialize, Deserialize, Default, Clone)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Draft {
+    pub when: Option<DateTime<Utc>>,
+    pub spot_id: Option<String>,
+    pub location: Option<String>,
+    pub tags: Vec<String>,
+    pub title: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FillResult {
+    pub draft: Draft,
+    /// True once we have a time and a place — the bot can show the confirm step.
+    pub ready: bool,
+    /// Natural-language prompt for the next missing field (used when not ready).
+    pub reply: String,
+}
+
+/// Merge what the user just said into the running draft and decide what's next.
+pub async fn post_fill(state: &AppState, draft: Draft, message: &str) -> ApiResult<FillResult> {
+    let spots: Vec<(String, String)> = sqlx::query_as("SELECT id, name FROM kidgo_spots WHERE curated")
+        .fetch_all(&state.pool)
+        .await?;
+    if state.llm.enabled() {
+        match llm_fill(state, &draft, message, &spots).await {
+            Ok(r) => return Ok(r),
+            Err(e) => tracing::warn!("LLM post-fill failed, using rules: {e:?}"),
+        }
+    }
+    Ok(rule_fill(draft, message, &spots))
+}
+
+/// A library spot wins over free text; "ready" needs a time and a place.
+fn finalize(mut draft: Draft) -> (Draft, bool) {
+    if draft.spot_id.is_some() {
+        draft.location = None;
+    }
+    let ready = draft.when.is_some() && (draft.spot_id.is_some() || draft.location.is_some());
+    (draft, ready)
+}
+
+fn rule_fill(mut draft: Draft, message: &str, spots: &[(String, String)]) -> FillResult {
+    let had_when = draft.when.is_some();
+    let p = rule_parse(message, spots);
+    if draft.when.is_none() {
+        draft.when = p.when;
+    }
+    if draft.spot_id.is_none() && draft.location.is_none() {
+        if let Some(sid) = p.spot_id {
+            draft.spot_id = Some(sid);
+        } else if had_when {
+            // The time was already known, so treat this reply as the place.
+            draft.location = Some(message.trim().to_string());
+        }
+    }
+    if draft.title.is_none() {
+        draft.title = p.title;
+    }
+    if draft.tags.is_empty() {
+        draft.tags = p.tags;
+    }
+    let (draft, ready) = finalize(draft);
+    let reply = if draft.when.is_none() {
+        "What day and time? e.g. “Saturday 2pm”.".to_string()
+    } else if draft.spot_id.is_none() && draft.location.is_none() {
+        "Where should it be? You can name any place.".to_string()
+    } else {
+        "Great — let me confirm.".to_string()
+    };
+    FillResult { draft, ready, reply }
+}
+
+#[derive(Deserialize)]
+struct FillFields {
+    #[serde(default)]
+    date: Option<String>,
+    #[serde(default)]
+    time: Option<String>,
+    #[serde(default)]
+    spot_id: Option<String>,
+    #[serde(default)]
+    location: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    tags: Option<Vec<String>>,
+    #[serde(default)]
+    reply: Option<String>,
+}
+
+async fn llm_fill(
+    state: &AppState,
+    draft: &Draft,
+    message: &str,
+    spots: &[(String, String)],
+) -> ApiResult<FillResult> {
+    let spot_list = spots.iter().map(|(id, name)| format!("{id} ({name})")).collect::<Vec<_>>().join(", ");
+    let today = Utc::now().with_timezone(&offset()).date_naive();
+    let draft_json = serde_json::json!({
+        "when": draft.when, "spot_id": draft.spot_id, "location": draft.location,
+        "title": draft.title, "tags": draft.tags,
+    });
+    let system = format!(
+        "You help a parent create a kids' playdate over WhatsApp, collecting details step by step. \
+         Today is {today} (Europe/Amsterdam). Known spots as id (name): {spot_list}. \
+         The draft so far is: {draft_json}. From the draft plus the user's new message, fill the fields. \
+         Required: a date AND time, and a place. For the place, if it clearly matches a known spot use its \
+         spot_id; otherwise put the place name in `location` (custom places are allowed — do not force a match). \
+         Capture title and tags only if mentioned. Keep already-known values unless the user changes them. \
+         `reply` must be ONE short, friendly WhatsApp message asking ONLY for the next missing required field \
+         (date/time, or place), or a brief upbeat lead-in if everything required is present. \
+         Reply ONLY with compact JSON: {{\"date\":\"YYYY-MM-DD\"|null,\"time\":\"HH:MM\"|null,\
+         \"spot_id\":\"<id>\"|null,\"location\":\"<place>\"|null,\"title\":\"...\"|null,\
+         \"tags\":[\"sandbox\"],\"reply\":\"...\"}}."
+    );
+    let slice = chat_json(state, &system, message).await?;
+    let f: FillFields = serde_json::from_str(&slice).map_err(anyhow_lite::Error::from)?;
+
+    let mut next = draft.clone();
+    if let (Some(d), Some(t)) = (f.date.as_deref(), f.time.as_deref()) {
+        if let (Ok(d), Ok(t)) =
+            (NaiveDate::parse_from_str(d, "%Y-%m-%d"), NaiveTime::parse_from_str(t, "%H:%M"))
+        {
+            next.when = combine(d, t);
+        }
+    }
+    if let Some(sid) = f.spot_id.filter(|s| s != "null" && spots.iter().any(|(id, _)| id == s)) {
+        next.spot_id = Some(sid);
+        next.location = None;
+    } else if let Some(loc) = f.location.filter(|s| s != "null" && !s.trim().is_empty()) {
+        next.location = Some(loc);
+    }
+    if let Some(title) = f.title.filter(|s| s != "null" && !s.trim().is_empty()) {
+        next.title = Some(title);
+    }
+    if let Some(tags) = f.tags.filter(|t| !t.is_empty()) {
+        next.tags = tags;
+    }
+
+    let (next, ready) = finalize(next);
+    let reply = f.reply.unwrap_or_else(|| "Tell me a bit more — when and where?".into());
+    Ok(FillResult { draft: next, ready, reply })
 }
 
 #[cfg(test)]

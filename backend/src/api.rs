@@ -33,6 +33,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/users/by-phone/:phone", get(user_by_phone))
         .route("/api/users/:id/activities", get(user_activities))
         .route("/api/nlu/parse", post(parse_sentence))
+        .route("/api/nlu/intent", post(classify_intent))
+        .route("/api/nlu/post-fill", post(post_fill))
         .with_state(state)
 }
 
@@ -70,7 +72,7 @@ async fn list_groups(State(st): State<AppState>) -> ApiResult<Json<Vec<Group>>> 
 
 async fn list_spots(State(st): State<AppState>) -> ApiResult<Json<Vec<Spot>>> {
     let spots = sqlx::query_as::<_, Spot>(
-        "SELECT id, name, area, type, ages, lat, lon FROM kidgo_spots ORDER BY name",
+        "SELECT id, name, area, type, ages, lat, lon FROM kidgo_spots WHERE curated ORDER BY name",
     )
     .fetch_all(&st.pool)
     .await?;
@@ -239,10 +241,24 @@ async fn create_activity(
         .or(host_stage)
         .ok_or_else(|| AppError::BadRequest("group is required (host has no stage set)".into()))?;
 
+    // Resolve the place: a known library spot, or a free-text location that we
+    // geocode into a custom spot. Either way we end up with a real spot_id.
+    let spot_id = match body.spot_id.as_ref().filter(|s| !s.trim().is_empty()) {
+        Some(id) => id.clone(),
+        None => {
+            let location = body
+                .location
+                .as_ref()
+                .filter(|s| !s.trim().is_empty())
+                .ok_or_else(|| AppError::BadRequest("a spot or location is required".into()))?;
+            ensure_custom_spot(&st.pool, location).await?
+        }
+    };
+
     // Spot drives the area, so the two never disagree.
     let spot: Option<(String, String)> =
         sqlx::query_as("SELECT area, name FROM kidgo_spots WHERE id = $1")
-            .bind(&body.spot_id)
+            .bind(&spot_id)
             .fetch_optional(&st.pool)
             .await?;
     let (area, spot_name) = spot.ok_or_else(|| AppError::BadRequest("unknown spot".into()))?;
@@ -260,7 +276,7 @@ async fn create_activity(
     .bind(id)
     .bind(&title)
     .bind(&group)
-    .bind(&body.spot_id)
+    .bind(&spot_id)
     .bind(&area)
     .bind(&tags)
     .bind(body.when)
@@ -690,6 +706,43 @@ async fn update_me(
     Ok(Json(user))
 }
 
+/// Resolve a free-text place to a spot id, creating a custom (non-curated) spot
+/// the first time we see it. Geocoding is best-effort: a place we can't locate
+/// is still stored by name (its Maps link is a name search), just without a pin.
+async fn ensure_custom_spot(pool: &PgPool, name: &str) -> ApiResult<String> {
+    let name = name.trim();
+    // Reuse an existing spot with the same name (case-insensitive) to avoid dupes.
+    if let Some(id) = sqlx::query_scalar::<_, String>(
+        "SELECT id FROM kidgo_spots WHERE lower(name) = lower($1) LIMIT 1",
+    )
+    .bind(name)
+    .fetch_optional(pool)
+    .await?
+    {
+        return Ok(id);
+    }
+
+    let (lat, lon) = match crate::geo::geocode(name).await {
+        Some((la, lo)) => (Some(la), Some(lo)),
+        None => (None, None),
+    };
+    let id = format!("custom-{}", Uuid::new_v4());
+    sqlx::query(
+        "INSERT INTO kidgo_spots (id, name, area, type, ages, lat, lon, curated)
+         VALUES ($1,$2,$3,$4,$5,$6,$7, FALSE)",
+    )
+    .bind(&id)
+    .bind(name)
+    .bind("Maastricht")
+    .bind("Community spot")
+    .bind("All ages")
+    .bind(lat)
+    .bind(lon)
+    .execute(pool)
+    .await?;
+    Ok(id)
+}
+
 async fn fetch_user(pool: &PgPool, id: Uuid) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as::<_, User>(
         "SELECT id, nickname, phone, city, child_stage, interests, push_optout
@@ -731,6 +784,31 @@ async fn parse_sentence(
 ) -> ApiResult<Json<nlu::Parsed>> {
     let parsed = nlu::parse(&st, &body.text).await?;
     Ok(Json(parsed))
+}
+
+/// Route a free-form message to a bot flow (post / browse / mine / profile / help).
+async fn classify_intent(
+    State(st): State<AppState>,
+    Json(body): Json<ParseBody>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let intent = nlu::classify_intent(&st, &body.text).await?;
+    Ok(Json(json!({ "intent": intent })))
+}
+
+#[derive(Deserialize)]
+struct FillBody {
+    #[serde(default)]
+    draft: nlu::Draft,
+    message: String,
+}
+
+/// One conversational turn of "create activity" slot filling.
+async fn post_fill(
+    State(st): State<AppState>,
+    Json(body): Json<FillBody>,
+) -> ApiResult<Json<nlu::FillResult>> {
+    let result = nlu::post_fill(&st, body.draft, &body.message).await?;
+    Ok(Json(result))
 }
 
 // ---------- helpers ----------

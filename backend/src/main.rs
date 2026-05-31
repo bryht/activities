@@ -1,6 +1,7 @@
 mod api;
 mod auth;
 mod error;
+mod geo;
 mod matching;
 mod models;
 mod nlu;

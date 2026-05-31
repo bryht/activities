@@ -87,10 +87,8 @@ export async function handleMessage(phone, text, reply) {
   }
 
   switch (s.step) {
-    case 'post_sentence':
-      return postFromSentence(s, user, msg, reply)
-    case 'post_pick_spot':
-      return postPickSpot(s, user, msg, reply)
+    case 'post_fill':
+      return postStep(s, user, msg, reply)
     case 'post_confirm':
       return postConfirm(s, user, lower, reply)
     case 'browse_pick':
@@ -144,106 +142,99 @@ async function register(s, phone, msg, reply) {
 // ---- main menu ----
 
 async function mainMenu(s, user, msg, lower, reply) {
-  if (lower === '1' || lower.startsWith('post')) {
-    s.step = 'post_sentence'
-    await reply('✍️ Describe your activity in one sentence:\n“Saturday 2pm, sandbox at Stadspark”')
-    return
+  // Instant, deterministic shortcuts: number keys and the menu words.
+  if (lower === '1') return startPosting(s, user, null, reply)
+  if (lower === '2') return browse(s, reply)
+  if (lower === '3') return showMine(user, reply)
+  if (lower === '4') return showProfile(user, reply)
+  if (['menu', 'hi', 'hello', 'help', 'start'].includes(lower)) return reply(MENU)
+
+  // Anything else: let the LLM decide which flow the message belongs to.
+  switch (await intentOf(msg)) {
+    case 'post':
+      return startPosting(s, user, msg, reply)
+    case 'browse':
+      return browse(s, reply)
+    case 'mine':
+      return showMine(user, reply)
+    case 'profile':
+      return showProfile(user, reply)
+    default:
+      return reply(MENU)
   }
-  if (lower === '2' || lower.startsWith('browse')) {
-    return browse(s, reply)
-  }
-  if (lower === '3' || lower.startsWith('mine') || lower.startsWith('my')) {
-    const mine = await api.myActivities(user.id)
-    if (!mine.length) return reply('You have no activities yet. Reply 1 to post one!')
-    // Each activity gets a short manage link (/m/<code>). Opening it logs you in
-    // for an hour so the website knows whether you're the host (edit/cancel/
-    // message) or a participant (message) — no "I want to come" button.
-    const { links } = await api.createLinks(user.id, mine.map((a) => a.id))
-    const codeFor = new Map(links.map((l) => [l.activityId, l.code]))
-    const body = mine
-      .map((a, i) => {
-        const code = codeFor.get(a.id)
-        return code ? `${fmtActivity(a, i)}\n   🔧 Manage: ${WEB_BASE}/m/${code}` : fmtActivity(a, i)
-      })
-      .join('\n\n')
-    return reply(`📋 *Your activities*\n\n${body}\n\n_Manage links expire in 1 hour — just ask for this list again to refresh them._`)
-  }
-  if (lower === '4' || lower.startsWith('profile')) {
-    const gs = await groups()
-    // Show every stage the parent follows (interests); fall back to childStage.
-    const ids = user.interests?.length ? user.interests : [user.childStage].filter(Boolean)
-    const stages = ids.map((id) => gs.find((x) => x.id === id)).filter(Boolean)
-    const label = stages.length ? stages.map((g) => `${g.emoji} ${g.name}`).join(', ') : '—'
-    const noun = stages.length > 1 ? 'Stages' : 'Stage'
-    return reply(`👤 *${user.nickname}*\n📍 ${user.city}\n🧒 ${noun}: ${label}\n\n${MENU}`)
-  }
-  // Fall back to treating free text as an activity sentence — but only commit to
-  // the posting flow if it actually looks like one (a day/time is detectable).
-  // Otherwise plain chatter would silently drop the user into "Which spot?".
-  if (msg.length > 6) {
-    return postFromSentence(s, user, msg, reply, { fromMenu: true })
-  }
-  await reply(MENU)
 }
 
-// ---- posting (Scenario A) ----
-
-async function postFromSentence(s, user, msg, reply, { fromMenu = false } = {}) {
-  const parsed = await api.parse(msg)
-  if (!parsed.when) {
-    // No time found. From the explicit "post" flow, coach them; from free-text
-    // chatter, don't hijack the conversation — just show the menu.
-    if (fromMenu) {
-      await reply("Sorry, I didn't quite get that.\n\n" + MENU)
-      return
-    }
-    s.step = 'post_sentence'
-    await reply('I couldn’t catch the day/time. Try e.g. “Saturday 2pm …” or type *cancel*.')
-    return
+// Classify a free-form message; never let an LLM hiccup break the conversation.
+async function intentOf(msg) {
+  try {
+    const { intent } = await api.intent(msg)
+    return intent
+  } catch {
+    return 'help'
   }
-  s.data.draft = {
-    when: parsed.when,
-    spotId: parsed.spotId,
-    tags: parsed.tags || [],
-    title: parsed.title || undefined,
-  }
-  // When we inferred "posting" from free text, say so up front so it's not a
-  // context-free jump.
-  const lead = fromMenu ? '📝 Looks like you want to post an activity!\n\n' : ''
-  if (!parsed.spotId) {
-    return postPickSpotPrompt(s, reply, lead)
-  }
-  return showConfirm(s, reply, lead)
 }
 
-async function postPickSpotPrompt(s, reply, lead = '') {
-  s.step = 'post_pick_spot'
-  const spots = await api.spots()
-  s.data.spots = spots
-  const list = spots.map((sp, i) => `${i + 1}. ${sp.name} (${sp.area})`).join('\n')
-  // Echo the day/time we understood so the spot question has context.
+async function showMine(user, reply) {
+  const mine = await api.myActivities(user.id)
+  if (!mine.length) return reply('You have no activities yet. Reply 1 to post one!')
+  // Each activity gets a short manage link (/m/<code>). Opening it logs you in
+  // for an hour so the website knows whether you're the host (edit/cancel/
+  // message) or a participant (message) — no "I want to come" button.
+  const { links } = await api.createLinks(user.id, mine.map((a) => a.id))
+  const codeFor = new Map(links.map((l) => [l.activityId, l.code]))
+  const body = mine
+    .map((a, i) => {
+      const code = codeFor.get(a.id)
+      return code ? `${fmtActivity(a, i)}\n   🔧 Manage: ${WEB_BASE}/m/${code}` : fmtActivity(a, i)
+    })
+    .join('\n\n')
+  return reply(`📋 *Your activities*\n\n${body}\n\n_Manage links expire in 1 hour — just ask for this list again to refresh them._`)
+}
+
+async function showProfile(user, reply) {
+  const gs = await groups()
+  // Show every stage the parent follows (interests); fall back to childStage.
+  const ids = user.interests?.length ? user.interests : [user.childStage].filter(Boolean)
+  const stages = ids.map((id) => gs.find((x) => x.id === id)).filter(Boolean)
+  const label = stages.length ? stages.map((g) => `${g.emoji} ${g.name}`).join(', ') : '—'
+  const noun = stages.length > 1 ? 'Stages' : 'Stage'
+  return reply(`👤 *${user.nickname}*\n📍 ${user.city}\n🧒 ${noun}: ${label}\n\n${MENU}`)
+}
+
+// ---- posting (Scenario A) — LLM-driven slot filling ----
+
+// Enter the posting flow. If the user already described the activity (free
+// text routed here by intent), run the first fill turn on it immediately.
+async function startPosting(s, user, msg, reply) {
+  s.step = 'post_fill'
+  s.data.draft = {}
+  if (msg) return postStep(s, user, msg, reply)
   await reply(
-    `${lead}📅 ${fmtTime(s.data.draft.when)}\n\n📍 Where is it? Reply with a number (or *cancel*):\n${list}`,
+    '✍️ Let’s set up your activity! Tell me *when* and *where* — e.g. “Saturday 2pm at Stadspark, sandbox”.',
   )
 }
 
-async function postPickSpot(s, user, msg, reply) {
-  const spots = s.data.spots || (await api.spots())
-  const idx = parseInt(msg, 10) - 1
-  const spot = spots[idx]
-  if (!spot) return reply('Please reply with a spot number from the list.')
-  s.data.draft.spotId = spot.id
-  return showConfirm(s, reply)
+// One slot-filling turn: merge the message into the draft, then either ask for
+// the next missing detail or move on to confirmation.
+async function postStep(s, user, msg, reply) {
+  const r = await api.postFill(s.data.draft || {}, msg)
+  s.data.draft = r.draft
+  if (r.ready) return showConfirm(s, reply)
+  await reply(r.reply || 'Tell me a bit more — when and where?')
 }
 
-async function showConfirm(s, reply, lead = '') {
+async function showConfirm(s, reply) {
   const d = s.data.draft
-  const spots = await api.spots()
-  const spot = spots.find((x) => x.id === d.spotId)
+  // The place is either a known library spot or a free-text custom location.
+  let place = d.location
+  if (d.spotId) {
+    const spots = await api.spots()
+    place = spots.find((x) => x.id === d.spotId)?.name || d.spotId
+  }
   s.step = 'post_confirm'
   await reply(
-    `${lead}Please confirm:\n\n📅 ${fmtTime(d.when)}\n📍 ${spot ? spot.name : d.spotId}\n🏷️ ${
-      d.tags.length ? d.tags.join(', ') : '—'
+    `Please confirm:\n\n📅 ${fmtTime(d.when)}\n📍 ${place || '—'}\n🏷️ ${
+      d.tags?.length ? d.tags.join(', ') : '—'
     }\n\nReply *yes* to post, or *no* to discard.`,
   )
 }
@@ -259,13 +250,25 @@ async function postConfirm(s, user, lower, reply) {
   const a = await api.createActivity({
     hostId: user.id,
     spotId: d.spotId,
+    location: d.location,
     when: d.when,
-    tags: d.tags,
+    tags: d.tags || [],
     title: d.title,
   })
   s.step = 'idle'
   s.data = {}
-  await reply(`✅ Activity created!\n\n${fmtActivity(a)}\n\nI’ll let you know when someone joins!`)
+
+  // Share a manage link so they can fine-tune details in the browser. Bonus —
+  // never let a link failure swallow the "created!" confirmation.
+  let manage = ''
+  try {
+    const { links } = await api.createLinks(user.id, [a.id])
+    const code = links[0]?.code
+    if (code) manage = `\n\n🔧 Add details or edit in your browser:\n${WEB_BASE}/m/${code}`
+  } catch {
+    /* ignore */
+  }
+  await reply(`✅ Activity created!\n\n${fmtActivity(a)}${manage}\n\nI’ll let you know when someone joins!`)
 }
 
 // ---- browsing & joining (Scenario B/D) ----
