@@ -42,8 +42,11 @@ run it as a daemon:
 signal-cli -a +<number> daemon --tcp 127.0.0.1:7583
 ```
 Set `SIGNAL_JSONRPC=127.0.0.1:7583` and `SIGNAL_NUMBER=+<number>`. The bot speaks
-JSON-RPC over that socket (text only for now; attachments get a "please type"
-nudge). Run signal-cli as its own `systemd` service alongside the bot.
+JSON-RPC over that socket. Photos and voice notes work too: signal-cli saves each
+incoming attachment to its data dir and the bot reads it from there
+(`SIGNAL_ATTACHMENTS_DIR`, default `~/.local/share/signal-cli/attachments`) and
+runs it through the vision/audio model — so signal-cli must run on the same host
+as the bot. Run signal-cli as its own `systemd` service alongside the bot.
 
 ## Flows (`src/flows.js`)
 - **Registration** (PRD §4.1) — new identity → nickname → stage → `POST /users` (with `platform`).

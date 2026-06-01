@@ -6,6 +6,8 @@
 // (flows.js) is transport-agnostic, so adding a platform is just adding an
 // adapter. Run with only TELEGRAM_BOT_TOKEN set and it's a Telegram-only bot.
 import http from 'node:http'
+import os from 'node:os'
+import { join } from 'node:path'
 import pino from 'pino'
 import { startTelegram } from './adapters/telegram.js'
 import { createWhatsApp } from './adapters/whatsapp.js'
@@ -43,6 +45,9 @@ if (process.env.SIGNAL_JSONRPC && process.env.SIGNAL_NUMBER) {
     host: host || '127.0.0.1',
     port: Number(port) || 7583,
     account: process.env.SIGNAL_NUMBER,
+    attachmentsDir:
+      process.env.SIGNAL_ATTACHMENTS_DIR ||
+      join(os.homedir(), '.local', 'share', 'signal-cli', 'attachments'),
     logger,
   })
   enabled.push('signal')

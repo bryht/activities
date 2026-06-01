@@ -7,11 +7,19 @@
 // The daemon streams inbound messages as newline-delimited JSON-RPC `receive`
 // notifications and accepts `send` requests. Identity is the sender's number:
 // { platform: 'signal', id: '+31…' }. Signal shows markup literally, so we strip
-// the *bold*/_italic_ before sending. Text only for now (no attachment download).
+// the *bold*/_italic_ before sending.
+//
+// Media: a `receive` notification does not carry the bytes — signal-cli saves
+// each incoming attachment to its data dir and reports an `id` (the filename) and
+// `contentType`. signal-cli and the bot run on the same host, so we read the file
+// from `attachmentsDir` and run it through the vision/audio model like the other
+// platforms.
 import net from 'node:net'
-import { handleMessage, stripMarkdown } from '../core.js'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { handleMessage, understandMedia, stripMarkdown, mediaFallback } from '../core.js'
 
-export function startSignal({ host, port, account, logger }) {
+export function startSignal({ host, port, account, attachmentsDir, logger }) {
   let sock = null
   let buf = ''
   let nextId = 1
@@ -28,6 +36,34 @@ export function startSignal({ host, port, account, logger }) {
     )
   }
 
+  const reply = (from) => (text) => send(from, text)
+
+  async function dispatch(from, text) {
+    if (!text || !text.trim()) return
+    await handleMessage({ platform: 'signal', id: from }, text, reply(from))
+  }
+
+  // Classify a Signal attachment by its MIME type; null = unsupported kind.
+  const kindOf = (ct = '') =>
+    ct.startsWith('image/') ? 'image' : ct.startsWith('audio/') ? 'audio' : null
+
+  // Read the saved attachment and turn it into text, then run that through the
+  // flow. The `id` is the filename signal-cli wrote under attachmentsDir.
+  async function dispatchMedia(from, att) {
+    const kind = kindOf(att.contentType)
+    if (!kind) return send(from, mediaFallback('image'))
+    try {
+      const buffer = await readFile(join(attachmentsDir, att.id))
+      const mime = att.contentType || (kind === 'image' ? 'image/jpeg' : 'audio/aac')
+      const text = await understandMedia(kind, buffer, mime)
+      if (text) return dispatch(from, text)
+      send(from, mediaFallback(kind))
+    } catch (err) {
+      logger?.error?.({ err }, 'signal media error')
+      send(from, mediaFallback(kind))
+    }
+  }
+
   function onLine(line) {
     if (!line.trim()) return
     let obj
@@ -40,18 +76,21 @@ export function startSignal({ host, port, account, logger }) {
     const env = obj.params?.envelope
     const data = env?.dataMessage
     const from = env?.sourceNumber || env?.source
-    const text = data?.message
-    if (!from) return
-    if (!text || !text.trim()) {
-      // Attachment-only message: we can't read media on Signal yet.
-      if (data?.attachments?.length) {
-        send(from, 'I can only read text on Signal for now — could you type the details?')
-      }
+    if (!from || !data) return
+
+    const text = data.message
+    if (text && text.trim()) {
+      dispatch(from, text).catch((err) => logger?.error?.({ err }, 'signal handler error'))
       return
     }
-    handleMessage({ platform: 'signal', id: from }, text, (t) => send(from, t)).catch((err) =>
-      logger?.error?.({ err }, 'signal handler error'),
-    )
+
+    // No text: try the first image/audio attachment.
+    const media = (data.attachments || []).find((a) => kindOf(a.contentType))
+    if (media) {
+      dispatchMedia(from, media).catch((err) => logger?.error?.({ err }, 'signal media error'))
+    } else if (data.attachments?.length) {
+      send(from, "I couldn't read that attachment — could you type the details instead?")
+    }
   }
 
   function connect() {
