@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "KidGo Telegram bot (grammY) — main entry point (PRD §5.1).",
+  "description": "KidGo multi-platform bot (Telegram/WhatsApp/Signal) — main entry point (PRD §5.1).",
   "scripts": {
     "start": "node src/index.js"
   },

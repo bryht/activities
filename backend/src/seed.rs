@@ -176,9 +176,10 @@ pub async fn run(pool: &PgPool) -> Result<(), sqlx::Error> {
 /// so re-running on every boot keeps these events permanently upcoming.
 async fn seed_recurring(pool: &PgPool) -> Result<(), sqlx::Error> {
     let host_id: Uuid = sqlx::query_scalar(
+        // platform defaults to 'telegram'; the (platform, phone) pair is unique.
         "INSERT INTO kidgo_users (id, nickname, phone, city)
          VALUES ($1,$2,$3,'Maastricht')
-         ON CONFLICT (phone) DO UPDATE SET nickname = EXCLUDED.nickname
+         ON CONFLICT (platform, phone) DO UPDATE SET nickname = EXCLUDED.nickname
          RETURNING id",
     )
     .bind(Uuid::parse_str(COMMUNITY_HOST_ID).expect("valid host uuid"))

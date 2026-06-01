@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { resolveLink } from '../lib/api'
 import { saveToken } from '../lib/session'
-import TelegramButton from '../components/TelegramButton'
+import PlatformButtons from '../components/PlatformButtons'
 
 // Landing page for a short manage link (/m/<code>). It exchanges the code for a
 // session token, stores it, and redirects to the activity. Expired / unknown
@@ -44,7 +44,7 @@ export default function ManageLink() {
         title="This link has expired"
         body="Manage links last one hour. Tap below and the KidGo bot will send you a fresh one for this activity."
       >
-        <TelegramButton
+        <PlatformButtons
           full={false}
           label="Get a fresh link 🔑"
           payload={`manage_${state.activityId}`}
@@ -60,7 +60,7 @@ export default function ManageLink() {
       title="This link isn't valid"
       body="It may have been mistyped or already replaced. Ask the KidGo bot for your activities to get working links."
     >
-      <TelegramButton
+      <PlatformButtons
         full={false}
         label="Open KidGo 💬"
         payload="mine"

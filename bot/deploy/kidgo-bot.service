@@ -1,5 +1,5 @@
 [Unit]
-Description=KidGo Telegram bot (grammY)
+Description=KidGo multi-platform bot (Telegram/WhatsApp/Signal)
 # The bot calls the local API, so start it after that's up.
 After=network.target kidgo-api.service
 Wants=kidgo-api.service

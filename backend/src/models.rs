@@ -39,6 +39,8 @@ pub struct User {
     pub id: Uuid,
     pub nickname: String,
     pub phone: String,
+    /// Chat platform this identity belongs to: `telegram` | `whatsapp` | `signal`.
+    pub platform: String,
     pub city: String,
     pub child_stage: Option<String>,
     pub interests: Vec<String>,
@@ -50,6 +52,9 @@ pub struct User {
 pub struct UpsertUser {
     pub nickname: String,
     pub phone: String,
+    /// Defaults to `telegram` for backward-compatibility with older callers.
+    #[serde(default)]
+    pub platform: Option<String>,
     pub city: Option<String>,
     pub child_stage: Option<String>,
     pub interests: Option<Vec<String>>,

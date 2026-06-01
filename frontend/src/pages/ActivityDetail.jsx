@@ -5,7 +5,7 @@ import { getExpiredToken } from '../lib/session'
 import { dayLabel, timeLabel } from '../lib/datetime'
 import { mapsUrl, calendarUrl } from '../lib/links'
 import GroupBadge from '../components/GroupBadge'
-import TelegramButton from '../components/TelegramButton'
+import PlatformButtons from '../components/PlatformButtons'
 
 export default function ActivityDetail() {
   const { id } = useParams()
@@ -69,7 +69,7 @@ export default function ActivityDetail() {
             Tap below and the KidGo bot will send you a fresh one for this activity.
           </p>
           <div className="mt-3">
-            <TelegramButton
+            <PlatformButtons
               full={false}
               label="Get a fresh link 🔑"
               payload={`manage_${activity.id}`}
@@ -209,7 +209,7 @@ export default function ActivityDetail() {
               <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
                 <span className="font-semibold text-slate-700 dark:text-slate-200">{activity.going.length} of {activity.capacity}</span> families going
               </p>
-              {joined ? <JoinedNote role={role} /> : <TelegramButton label="I want to come 🙋" payload={`ref_${activity.id}`} />}
+              {joined ? <JoinedNote role={role} /> : <PlatformButtons label="I want to come 🙋" payload={`ref_${activity.id}`} />}
             </div>
           </div>
         </aside>
@@ -220,7 +220,7 @@ export default function ActivityDetail() {
         <>
           <div className="h-20 lg:hidden" aria-hidden="true" />
           <div className="fixed inset-x-0 bottom-[57px] z-10 mx-auto max-w-2xl border-t border-rose-100 bg-white/95 p-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 md:bottom-0 lg:hidden">
-            <TelegramButton label="I want to come 🙋" payload={`ref_${activity.id}`} />
+            <PlatformButtons label="I want to come 🙋" payload={`ref_${activity.id}`} />
           </div>
         </>
       )}
