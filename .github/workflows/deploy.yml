@@ -27,6 +27,8 @@ jobs:
       VITE_API_BASE: https://api.bryht.net/kid-go
       VITE_BOT_USERNAME: ${{ vars.KIDGO_BOT_USERNAME || 'kidgo_bot' }}
       VITE_BOT_LINK: ${{ vars.KIDGO_BOT_LINK || 'https://t.me/kidgo_bot' }}
+      VITE_WHATSAPP_NUMBER: ${{ vars.KIDGO_WHATSAPP_NUMBER }}
+      VITE_SIGNAL_NUMBER: ${{ vars.KIDGO_SIGNAL_NUMBER }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

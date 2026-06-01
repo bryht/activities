@@ -18,7 +18,8 @@ async function req(method, path, body) {
 export const api = {
   groups: () => req('GET', '/api/groups'),
   spots: () => req('GET', '/api/spots'),
-  userByPhone: (phone) => req('GET', `/api/users/by-phone/${phone}`),
+  byIdentity: (platform, id) =>
+    req('GET', `/api/users/by-identity/${platform}/${encodeURIComponent(id)}`),
   upsertUser: (user) => req('POST', '/api/users', user),
   listActivities: (qs = '') => req('GET', `/api/activities${qs}`),
   activity: (id) => req('GET', `/api/activities/${id}`),

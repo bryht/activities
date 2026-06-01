@@ -12,7 +12,7 @@ See [`doc/PRD.md`](doc/PRD.md) and [`doc/PLAN.md`](doc/PLAN.md).
 |-----|------|-------|--------|
 | `backend/`  | API server | Rust (Axum) + PostgreSQL | ✅ Deployed — https://api.bryht.net/kid-go |
 | `frontend/` | Browse website | React + Vite + Tailwind | ✅ Builds; deploys to kidgo.bryht.net |
-| `bot/`      | Telegram bot | Node.js (grammY) | ✅ Runs; needs a BotFather token |
+| `bot/`      | Chat bot (Telegram/WhatsApp/Signal) | Node.js (grammY + REST) | ✅ Runs; needs at least one platform credential |
 | `design/`   | Original prototype | React (mock data) | 📦 Superseded by `frontend/` |
 
 ## Run everything locally
@@ -24,7 +24,7 @@ docker compose up --build            # API → http://localhost:8080
 # 2. Frontend
 cd frontend && npm install && cp .env.example .env && npm run dev   # http://localhost:5173
 
-# 3. Bot (optional — needs a Telegram bot token from @BotFather)
+# 3. Bot (optional — needs at least one platform: Telegram token, WhatsApp Cloud, or Signal)
 cd bot && npm install && cp .env.example .env && npm start
 ```
 
@@ -34,9 +34,9 @@ The three runtimes talk over the REST API; the prototype's data shapes
 ## Architecture
 
 ```
-Telegram bot (grammY) ─┐
-                       ├─► API server (Rust: NLU · Matching · Notify) ─► PostgreSQL
-Website (React static) ┘
+Chat bot (Telegram/WhatsApp/Signal) ─┐
+                                     ├─► API server (Rust: NLU · Matching · Notify) ─► PostgreSQL
+Website (React static) ──────────────┘
 ```
 
 - **NLU** — LLM (with a deterministic fallback) parses a sentence into date/time/spot/tags.

@@ -1,9 +1,10 @@
 name: Deploy Bot
 
-# Ships the Telegram bot (Node/grammY) to the server. No build step — we rsync
-# the source and run `npm ci` on the box. The server .env is preserved by rsync;
-# the TELEGRAM_BOT_TOKEN secret (if set) is upserted into it on each deploy, so
-# other hand-managed keys (KIDGO_API_BASE, …) stay intact.
+# Ships the multi-platform bot (Node) to the server. No build step — we rsync the
+# source and run `npm ci` on the box. The server .env is preserved by rsync; the
+# CI-managed platform secrets (Telegram/WhatsApp/Signal) are merged into it on
+# each deploy, leaving hand-managed keys (KIDGO_API_BASE, LOG_LEVEL, PORT,
+# SIGNAL_JSONRPC, …) intact. A secret left unset is simply not written.
 on:
   push:
     branches: [main]
@@ -44,34 +45,47 @@ jobs:
           SSH_PORT: ${{ vars.DEPLOY_SSH_PORT || '22' }}
           DEPLOY_PATH: ${{ vars.KIDGO_BOT_PATH || '/opt/kidgo-bot' }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+          WHATSAPP_TOKEN: ${{ secrets.WHATSAPP_TOKEN }}
+          WHATSAPP_VERIFY_TOKEN: ${{ secrets.WHATSAPP_VERIFY_TOKEN }}
+          SIGNAL_NUMBER: ${{ secrets.SIGNAL_NUMBER }}
         run: |
-          # --delete keeps the server tree in sync, but the excludes below are
-          # preserved: the server .env and the server-built node_modules.
-          # Trailing slash on bot/ copies contents.
+          # --delete keeps the server tree in sync; the excludes preserve the
+          # server .env and the server-built node_modules.
           rsync -az --delete \
             --exclude 'node_modules/' \
             --exclude '.env' \
             -e "ssh -p $SSH_PORT -i ~/.ssh/id_deploy" \
             bot/ "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/"
 
-          # Upsert the bot token into the server .env. The value is piped over
-          # stdin (never on a command line, so it can't leak via the remote
-          # process list; GitHub also masks it in logs). Skipped when the secret
-          # is unset, so a missing secret can't blank a token set by hand.
-          if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
-            printf '%s' "$TELEGRAM_BOT_TOKEN" | ssh -p "$SSH_PORT" -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" \
-              "cd '$DEPLOY_PATH' \
-               && tok=\$(cat) \
-               && touch .env \
-               && { grep -v '^TELEGRAM_BOT_TOKEN=' .env > .env.tmp || true; } \
-               && printf 'TELEGRAM_BOT_TOKEN=%s\n' \"\$tok\" >> .env.tmp \
-               && mv .env.tmp .env \
-               && chmod 600 .env"
-          else
-            echo "TELEGRAM_BOT_TOKEN secret not set — leaving server .env untouched."
-          fi
+          # Collect whichever platform secrets are set into a fragment file (never
+          # on a command line; GitHub masks the values in logs), scp it over, and
+          # merge: drop any key the fragment redefines from the existing .env, then
+          # append the fragment. Keys not present in the fragment are untouched.
+          frag="$(mktemp)"
+          for k in TELEGRAM_BOT_TOKEN WHATSAPP_PHONE_NUMBER_ID WHATSAPP_TOKEN WHATSAPP_VERIFY_TOKEN SIGNAL_NUMBER; do
+            v="$(printenv "$k" || true)"
+            [ -n "$v" ] && printf '%s=%s\n' "$k" "$v" >> "$frag"
+          done
 
-          ssh -p "$SSH_PORT" -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" \
+          SSH="ssh -p $SSH_PORT -i ~/.ssh/id_deploy"
+          if [ -s "$frag" ]; then
+            scp -P "$SSH_PORT" -i ~/.ssh/id_deploy "$frag" "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/.env.ci"
+            $SSH "$SSH_USER@$SSH_HOST" "cd '$DEPLOY_PATH' \
+              && touch .env \
+              && keys=\$(sed -n 's/^\([A-Z_][A-Z0-9_]*\)=.*/\1/p' .env.ci) \
+              && cp .env .env.new \
+              && for k in \$keys; do grep -v \"^\$k=\" .env.new > .env.tmp || true; mv .env.tmp .env.new; done \
+              && cat .env.ci >> .env.new \
+              && mv .env.new .env \
+              && rm -f .env.ci \
+              && chmod 600 .env"
+          else
+            echo 'No bot platform secrets set — leaving server .env untouched.'
+          fi
+          rm -f "$frag"
+
+          $SSH "$SSH_USER@$SSH_HOST" \
             "cd '$DEPLOY_PATH' \
              && npm ci --omit=dev \
              && sudo systemctl restart kidgo-bot \

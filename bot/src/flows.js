@@ -2,13 +2,18 @@
 // Hybrid model: numbered quick-replies for menus + natural language for posting.
 import { api } from './api.js'
 
-// Per-user conversation state, keyed by the platform user id. In-memory is fine
-// for the pilot; move to Redis/DB when we run multiple bot instances.
+// Per-user conversation state, keyed by `platform:id` so the same digits on two
+// platforms (e.g. a Telegram id vs a WhatsApp number) never share a session.
+// In-memory is fine for the pilot; move to Redis/DB when we run multiple bots.
 const sessions = new Map()
-const session = (phone) => {
-  if (!sessions.has(phone)) sessions.set(phone, { step: 'idle', data: {} })
-  return sessions.get(phone)
+const session = (key) => {
+  if (!sessions.has(key)) sessions.set(key, { step: 'idle', data: {} })
+  return sessions.get(key)
 }
+
+// A user identity is { platform, id } — platform is 'telegram'|'whatsapp'|'signal'
+// and id is that platform's opaque user id (Telegram numeric id, or a phone number).
+const identityKey = (identity) => `${identity.platform}:${identity.id}`
 
 let groupsCache = null
 const groups = async () => (groupsCache ||= await api.groups())
@@ -45,12 +50,12 @@ function fmtActivity(a, i) {
 
 /**
  * Handle one inbound text message.
- * @param {string} phone  platform user id (e.g. Telegram numeric user id)
+ * @param {{platform:string,id:string}} identity  who sent it, and on which platform
  * @param {string} text   message body
  * @param {(t:string)=>Promise<void>} reply
  */
-export async function handleMessage(phone, text, reply) {
-  const s = session(phone)
+export async function handleMessage(identity, text, reply) {
+  const s = session(identityKey(identity))
   const msg = text.trim()
   const lower = msg.toLowerCase()
 
@@ -65,11 +70,11 @@ export async function handleMessage(phone, text, reply) {
     return
   }
 
-  const user = await api.userByPhone(phone)
+  const user = await api.byIdentity(identity.platform, identity.id)
 
   // ---- Registration (PRD §4.1) ----
   if (!user) {
-    return register(s, phone, msg, reply)
+    return register(s, identity, msg, reply)
   }
 
   // Website "I want to come" deep-link (PRD §3.B): the prefilled message carries
@@ -100,7 +105,7 @@ export async function handleMessage(phone, text, reply) {
 
 // ---- registration ----
 
-async function register(s, phone, msg, reply) {
+async function register(s, identity, msg, reply) {
   if (s.step !== 'reg_nickname' && s.step !== 'reg_stage') {
     s.step = 'reg_nickname'
     s.data = {}
@@ -128,7 +133,8 @@ async function register(s, phone, msg, reply) {
   const ids = picks.map((p) => p.id)
   const user = await api.upsertUser({
     nickname: s.data.nickname,
-    phone,
+    platform: identity.platform,
+    phone: identity.id,
     childStage: ids[0],
     interests: ids,
   })

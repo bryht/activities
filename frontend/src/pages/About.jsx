@@ -3,7 +3,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { useReference } from "../context/Reference";
 import { useApi, apiSend } from "../lib/api";
 import { getToken } from "../lib/session";
-import TelegramButton from "../components/TelegramButton";
+import PlatformButtons from "../components/PlatformButtons";
 import KidGoMark from "../components/KidGoMark";
 
 // Telegram bot link — scanning the QR (or tapping it) opens the bot (PRD §4.1, §8).
@@ -41,7 +41,7 @@ export default function About() {
         {!loggedIn && (
           <>
             <div className="mx-auto mt-5 max-w-xs">
-              <TelegramButton label="Add the bot on Telegram" />
+              <PlatformButtons label="Add the bot on Telegram" />
             </div>
             {/* Scan in the Telegram app to open the bot (PRD §4.1, §8). */}
             <a

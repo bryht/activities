@@ -31,6 +31,10 @@ pub fn router(state: AppState) -> Router {
         .route("/api/users", post(upsert_user))
         .route("/api/me", get(get_me).patch(update_me))
         .route("/api/users/by-phone/:phone", get(user_by_phone))
+        .route(
+            "/api/users/by-identity/:platform/:phone",
+            get(user_by_identity),
+        )
         .route("/api/users/:id/activities", get(user_activities))
         .route("/api/nlu/parse", post(parse_sentence))
         .route("/api/nlu/intent", post(classify_intent))
@@ -610,19 +614,21 @@ async fn upsert_user(
     if body.nickname.trim().is_empty() || body.phone.trim().is_empty() {
         return Err(AppError::BadRequest("nickname and phone are required".into()));
     }
+    let platform = body.platform.unwrap_or_else(|| "telegram".into());
     let user = sqlx::query_as::<_, User>(
-        "INSERT INTO kidgo_users (id, nickname, phone, city, child_stage, interests)
-         VALUES ($1,$2,$3,$4,$5,$6)
-         ON CONFLICT (phone) DO UPDATE
+        "INSERT INTO kidgo_users (id, nickname, phone, platform, city, child_stage, interests)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (platform, phone) DO UPDATE
            SET nickname = EXCLUDED.nickname,
                city = EXCLUDED.city,
                child_stage = COALESCE(EXCLUDED.child_stage, kidgo_users.child_stage),
                interests = EXCLUDED.interests
-         RETURNING id, nickname, phone, city, child_stage, interests, push_optout",
+         RETURNING id, nickname, phone, platform, city, child_stage, interests, push_optout",
     )
     .bind(Uuid::new_v4())
     .bind(body.nickname.trim())
     .bind(normalize_phone(&body.phone))
+    .bind(&platform)
     .bind(body.city.unwrap_or_else(|| "Maastricht".into()))
     .bind(body.child_stage)
     .bind(body.interests.unwrap_or_default())
@@ -631,15 +637,29 @@ async fn upsert_user(
     Ok(Json(user))
 }
 
+// Backward-compatible lookup: bare phone resolves against the Telegram platform,
+// which is the only platform that existed before multi-platform support.
 async fn user_by_phone(
     State(st): State<AppState>,
     Path(phone): Path<String>,
 ) -> ApiResult<Json<User>> {
+    lookup_identity(&st, "telegram", &phone).await
+}
+
+async fn user_by_identity(
+    State(st): State<AppState>,
+    Path((platform, phone)): Path<(String, String)>,
+) -> ApiResult<Json<User>> {
+    lookup_identity(&st, &platform, &phone).await
+}
+
+async fn lookup_identity(st: &AppState, platform: &str, phone: &str) -> ApiResult<Json<User>> {
     let user = sqlx::query_as::<_, User>(
-        "SELECT id, nickname, phone, city, child_stage, interests, push_optout
-         FROM kidgo_users WHERE phone = $1",
+        "SELECT id, nickname, phone, platform, city, child_stage, interests, push_optout
+         FROM kidgo_users WHERE platform = $1 AND phone = $2",
     )
-    .bind(normalize_phone(&phone))
+    .bind(platform)
+    .bind(normalize_phone(phone))
     .fetch_optional(&st.pool)
     .await?
     .ok_or(AppError::NotFound)?;
@@ -746,7 +766,7 @@ async fn ensure_custom_spot(pool: &PgPool, name: &str) -> ApiResult<String> {
 
 async fn fetch_user(pool: &PgPool, id: Uuid) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as::<_, User>(
-        "SELECT id, nickname, phone, city, child_stage, interests, push_optout
+        "SELECT id, nickname, phone, platform, city, child_stage, interests, push_optout
          FROM kidgo_users WHERE id = $1",
     )
     .bind(id)
